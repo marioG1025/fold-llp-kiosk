@@ -17,6 +17,12 @@
   margin: 8px 0 12px;
 }
 .pickup-heading p:last-child { color: #f7e9d5; line-height: 1.45; }
+.pickup-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; }
+.pickup-controls .button[aria-pressed="true"] { background: var(--butter); border-color: #c1a269; }
+.pickup-control-status { color: var(--muted); font-size: .81rem; }
+.pickup:fullscreen { overflow: auto; }
+.pickup:fullscreen .pickup-layout { max-width: 1780px; padding-top: 20px; }
+.pickup:fullscreen .pickup-heading { padding-block: 24px; }
 .pickup-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; align-items: start; }
 .pickup-column {
   min-height: clamp(225px, 37vh, 370px);
@@ -62,6 +68,7 @@
   overflow-wrap: anywhere;
 }
 .pickup-ready .pickup-numbers li { background: var(--espresso); border-color: var(--espresso); color: #fff3d3; }
+.pickup-ready .pickup-numbers li[data-just-ready] { background: #704525; border-color: #704525; box-shadow: inset 0 0 0 2px #f8d27d; }
 .pickup-empty { color: var(--muted); font-size: .94rem; line-height: 1.4; padding-top: 15px; }
 .pickup-ready .pickup-empty { color: #674d25; }
 @media (max-width: 600px) {

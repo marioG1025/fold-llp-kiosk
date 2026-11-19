@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#251f18"><title>FOLD · Customer display</title>
+  <link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/counter.css">
+  <script type="module" src="/counter.js"></script>
+</head>
+<body class="counter">
+  <header class="counter-head">
+    <div class="brand" aria-label="FOLD Coffee and Patisserie"><span class="brand-name">fold<span>.</span></span><span class="brand-caption">COFFEE &amp;<br>PATISSERIE</span></div>
+    <details id="counter-settings" class="counter-settings">
+      <summary>Display settings</summary>
+      <div class="counter-settings-body">
+        <label for="counter-device">Register</label><select id="counter-device" disabled><option>Connecting…</option></select>
+        <button id="counter-fullscreen" type="button" hidden>Full screen</button>
+      </div>
+    </details>
+  </header>
+  <main id="counter-main" class="counter-main">
+    <section class="counter-welcome" id="counter-welcome">
+      <p class="counter-overline" id="counter-store">FOLD COFFEE &amp; PATISSERIE</p>
+      <h1 id="counter-headline">Welcome to Fold.</h1>
+      <p id="counter-message">Your order will appear here.</p>
+    </section>
+    <section id="counter-ticket" class="counter-ticket" aria-labelledby="counter-ticket-title" hidden>
+      <header><div><p class="counter-overline" id="counter-service"></p><h2 id="counter-ticket-title">Your order</h2></div><span id="counter-count"></span></header>
+      <ul id="counter-lines" class="counter-lines"></ul>
+      <dl id="counter-totals" class="counter-totals"></dl>
+    </section>
+  </main>
+  <span id="counter-announce" role="status" class="sr-only"></span>
+</body>
+</html>

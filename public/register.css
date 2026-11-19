@@ -268,3 +268,79 @@
   .register .reg-dialog::backdrop { display: none; }
   .reg-receipt .dialog-actions { display: none; }
 }
+.reg-skip-ticket:focus { top: 52px; }
+.register > #reg-announcement { position: fixed; inset: 0 auto auto 0; }
+.reg-location .select, .reg-ops-link { min-height: 44px; }
+.reg-ops-link { padding-inline: 6px; }
+.reg-tools { display: flex; gap: 7px; align-items: stretch; }
+.reg-search { flex: 1 1 auto; }
+.reg-tools .button { white-space: nowrap; }
+.reg-quick .reg-key-header { margin-bottom: 6px; }
+.reg-quick .reg-key-header h2 { margin: 0; }
+.reg-quick-key:disabled, .reg-key:disabled { opacity: .63; border-color: #dbd2c2; background: #f0ebe2; }
+.reg-stock { color: #64523d; font-size: .68rem; font-weight: 650; text-align: right; }
+.reg-category, .reg-service button, .reg-ticket-tools button, .reg-cash-keys .button { min-height: 44px; }
+.reg-ticket-tools { display: grid; grid-template-columns: .76fr .97fr 1.2fr; gap: 5px; margin: 0 17px 7px; }
+.reg-ticket-tools button { font-size: .77rem; padding: 5px 7px; }
+.reg-ticket-tools button > span { min-width: 18px; padding: 2px 4px; border-radius: 9px; background: #efe8d9; color: #594631; }
+.reg-line-controls .stepper button, .reg-dialog .dialog-actions .stepper button, .reg-dialog .dialog-close { height: 44px; width: 44px; }
+.reg-line-actions .reg-text-button, .reg-ticket-head .reg-text-button, .reg-adjust-button, #reg-edit-keys { min-height: 44px; min-width: 44px; }
+.reg-line-actions .reg-text-button { padding: 4px; }
+.reg-adjust-button { display: block; margin: -7px 0 1px auto; color: #694e32; }
+.reg-breakdown { margin: 10px 0; }
+.reg-dialog .field textarea {
+  width: 100%; min-height: 65px; resize: vertical;
+  border: 1px solid var(--reg-line); border-radius: 8px; padding: 9px;
+  background: var(--white); color: var(--reg-ink); font: inherit;
+}
+#reg-adjust-form > .field + .field { margin-top: 10px; }
+.reg-history-list { list-style: none; padding: 0; margin: 14px 0 0; }
+.reg-history-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--reg-line); }
+.reg-history-list strong { display: block; overflow-wrap: anywhere; }
+.reg-history-list small { display: block; margin-top: 3px; font-size: .73rem; color: #6a5944; }
+.reg-row-actions { display: flex; gap: 5px; }
+.reg-row-actions .button { min-height: 44px; padding: 6px 8px; font-size: .78rem; }
+.reg-shortcuts { margin-bottom: 0; }
+.reg-shortcuts > div { display: grid; grid-template-columns: 96px 1fr; border-top: 1px solid var(--reg-line); gap: 8px; padding: 8px 0; font-size: .83rem; }
+.reg-shortcuts dd { margin: 0; }
+
+@media (min-width: 900px) and (min-height: 560px) {
+  .reg-layout {
+    height: calc(100dvh - 71px);
+    grid-template-rows: minmax(0, 1fr);
+    padding-block: 17px 16px;
+    align-items: stretch;
+  }
+  .reg-catalog { display: flex; min-height: 0; flex-direction: column; }
+  .reg-workspace { margin-bottom: 12px; }
+  .reg-workspace h1 { font-size: clamp(3rem, 4.3vw, 4.6rem); }
+  .reg-tools, .reg-quick { margin-bottom: 10px; }
+  .reg-keys { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+  .reg-key-grid {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    align-content: start;
+    padding: 3px 4px 5px;
+    margin: -3px -4px -5px;
+  }
+  .reg-ticket { position: static; min-height: 0; max-height: none; }
+}
+@media (min-width: 1600px) {
+  .reg-key-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (max-width: 660px) {
+  .reg-ops-link { width: 44px; height: 44px; justify-content: center; border: 1px solid #786a57; border-radius: 8px; padding: 0; }
+  .reg-ops-link svg { display: block; }
+  .reg-ops-text { display: none; }
+}
+@media (max-width: 430px) {
+  .reg-tools { flex-wrap: wrap; }
+  .reg-search { flex-basis: 100%; }
+  .reg-row-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .reg-row-actions .button { padding-inline: 6px; }
+}
+@media print {
+  .reg-dialog .dialog-close { display: none; }
+}

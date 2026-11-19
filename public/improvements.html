@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FOLD · Release changes</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/workbench.css">
+  <script type="module" src="/improvements.js"></script>
+</head>
+<body class="workbench">
+  <a class="skip" href="#change-list">Skip to release changes</a>
+  <header class="wb-head"><a class="brand" href="/" aria-label="FOLD register"><span class="brand-name">fold<span>.</span></span></a><nav aria-label="Staff workspaces"><a href="/register">Register</a><a href="/terminal-lab">Terminal lab</a><a href="/sales">Sales</a><a href="/ops">Operations</a></nav></header>
+  <main class="wb-main">
+    <div class="wb-intro"><div><p class="eyebrow muted">POINT OF SALE RELEASE</p><h1>What changed</h1><p>Browse the shipped changes and their source references.</p></div></div>
+    <div class="wb-panel wb-controls">
+      <label class="wide">Search changes<input type="search" id="change-search" placeholder="Try held ticket, touch, or refund"></label>
+      <label>Area<select id="change-group"><option value="">All areas</option></select></label>
+    </div>
+    <p class="wb-context" id="change-count" role="status">Loading changes…</p>
+    <div id="change-list" class="wb-change-list"></div>
+  </main>
+</body>
+</html>

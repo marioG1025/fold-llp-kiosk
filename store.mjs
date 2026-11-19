@@ -49,6 +49,25 @@ export function openStore(directory) {
       updated_at TEXT NOT NULL
     ) STRICT;
     CREATE INDEX IF NOT EXISTS orders_queue ON orders(status, sequence DESC);
+    CREATE INDEX IF NOT EXISTS sessions_terminal ON session(device_id);
+    CREATE INDEX IF NOT EXISTS orders_created ON orders(json_extract(receipt, '$.createdAt'));
+    CREATE TABLE IF NOT EXISTS inventory (
+      store_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+      quantity INTEGER CHECK(quantity BETWEEN 0 AND 999),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(store_id, item_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS refund (
+      order_id TEXT PRIMARY KEY REFERENCES orders(id),
+      id TEXT NOT NULL UNIQUE,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS refunds_created ON refund(created_at);
     CREATE TABLE IF NOT EXISTS audit (
       id INTEGER PRIMARY KEY,
       category TEXT NOT NULL,

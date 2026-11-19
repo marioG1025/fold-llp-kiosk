@@ -288,4 +288,192 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     const cardSale = (await checkout({ ...cardData, tender: { method: 'card-demo' } })).order;
     assert.deepEqual(cardSale.tender, { method: 'card-demo' });
   });
+
+  let adjustedOrder;
+  let refundRequest;
+  let refundedOrder;
+  const stock = (storeId, itemId, available, quantity) => request('availability', { storeId, itemId, available, quantity });
+  const refund = (order, input, expected = 200) => request(`orders/${order.id}/refund`, input, expected);
+
+  await t.test('register adjustments use server policy, reduced taxable subtotal and immutable receipts', async () => {
+    const policy = await request('pos-policy');
+    assert.deepEqual(policy.discounts.map(preset => preset.id), ['none', 'staff-10', 'service-15']);
+    assert.equal(policy.tipLimitCents, 5000);
+    assert.equal(policy.noteLimit, 240);
+    const { session } = await open('north-01');
+    const line = { itemId: 'pain-au-chocolat', quantity: 1 };
+    const sale = cart(session.id, {
+      items: [line], discount: 'staff-10', note: '  Wrap separately  ', tipCents: 123,
+      discountCents: 9999, taxableSubtotalCents: 1, totalCents: 1,
+    });
+    const { quote } = await request('quote', sale);
+    assert.equal(quote.subtotalCents, 525);
+    assert.equal(quote.discountCents, 53);
+    assert.equal(quote.taxableSubtotalCents, 472);
+    assert.equal(quote.taxCents, 39);
+    assert.equal(quote.tipCents, 123);
+    assert.equal(quote.totalCents, 634);
+    assert.equal(quote.note, 'Wrap separately');
+    for (const extras of [{ discount: '90%-off' }, { tipCents: -1 }, { tipCents: 5001 }, { tipCents: 0.1 },
+      { note: 'x'.repeat(241) }, { note: 'one\u0000two' }]) {
+      await request('quote', { ...sale, ...extras }, 422);
+    }
+    await checkout({ ...sale, tender: { method: 'cash', receivedCents: policy.cashLimitCents + 1 } }, 422);
+    await stock('north', line.itemId, true, 2);
+    const paid = { ...sale, tender: { method: 'cash', receivedCents: 700 } };
+    adjustedOrder = (await checkout(paid)).order;
+    assert.equal(adjustedOrder.version, 2);
+    assert.equal(adjustedOrder.totalCents, quote.totalCents);
+    assert.equal(adjustedOrder.tender.changeCents, 66);
+    assert.equal(adjustedOrder.note, quote.note);
+    assert.equal((await checkout({ ...paid, note: quote.note }, 200)).duplicate, true);
+    await checkout({ ...paid, discount: 'service-15' }, 409);
+    await checkout({ ...paid, tipCents: 124 }, 409);
+    await checkout({ ...paid, note: 'Different note' }, 409);
+    assert.deepEqual((await request('recent-sales?device=north-01&limit=1')).orders, [adjustedOrder]);
+    assert.ok(!(await request('recent-sales?device=north-02')).orders.some(order => order.id === adjustedOrder.id));
+    await request('recent-sales?device=north-01&limit=51', undefined, 422);
+  });
+
+  await t.test('store stock aggregates variants and two terminals cannot sell the same remaining units', async () => {
+    await stock('lake', 'flat-white', true, 3);
+    assert.equal((await request('availability?storeId=lake')).items[0].quantity, 3);
+    assert.ok(!(await request('availability?storeId=market')).items.some(item => item.itemId === 'flat-white'));
+    await request('availability', { storeId: 'lake', itemId: 'flat-white', available: true, quantity: -1 }, 422);
+    await request('availability', { storeId: 'lake', itemId: 'unlisted', available: true }, 422);
+    const sessions = await Promise.all([open('lake-01'), open('lake-02')]);
+    const sales = sessions.map(({ session }) => cart(session.id));
+    const split = { ...sales[0], items: [sales[0].items[0], { ...sales[0].items[0], modifiers: { milk: 'whole' } }] };
+    const limited = await request('quote', split, 409);
+    assert.equal(limited.code, 'inventory_unavailable');
+    assert.equal(limited.remaining, 3);
+    assert.equal(limited.itemId, 'flat-white');
+    await stock('lake', 'almond-croissant', false, null);
+    await checkout({ ...sales[0], items: [...sales[0].items, { itemId: 'almond-croissant', quantity: 1 }] }, 409);
+    assert.equal((await request('availability?storeId=lake')).items.find(item => item.itemId === 'flat-white').quantity, 3);
+    const stream = await fetch(`${origin}/api/events`, { signal: AbortSignal.timeout(8000) });
+    const reader = stream.body.getReader();
+    try {
+      const results = await Promise.all(sales.map(async payload => {
+        const response = await fetch(`${origin}/api/orders`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        return { status: response.status, payload, value: await response.json() };
+      }));
+      assert.deepEqual(results.map(item => item.status).sort(), [201, 409]);
+      assert.equal(results.find(item => item.status === 409).value.remaining, 1);
+      let notifications = '';
+      while (!notifications.includes('data: {"type":"inventory"}')) {
+        const { value, done } = await reader.read();
+        assert.equal(done, false);
+        notifications += new TextDecoder().decode(value);
+      }
+      assert.ok(notifications.includes('data: {"type":"orders"}'));
+      const accepted = results.find(item => item.status === 201);
+      const blocked = results.find(item => item.status === 409);
+      const lastUnit = { ...blocked.payload, items: [{ ...blocked.payload.items[0], quantity: 1 }] };
+      await checkout(lastUnit);
+      const depleted = (await request('availability?storeId=lake')).items.find(item => item.itemId === 'flat-white');
+      assert.equal(depleted.quantity, 0);
+      assert.equal(depleted.available, false);
+      assert.equal(depleted.manualBlock, false);
+      assert.equal((await checkout(accepted.payload, 200)).duplicate, true);
+      const reset = await stock('lake', 'flat-white', true, null);
+      assert.ok(!reset.items.some(item => item.itemId === 'flat-white'));
+      assert.equal(reset.items.find(item => item.itemId === 'almond-croissant').manualBlock, true);
+      const { audit } = await request('audit');
+      assert.ok(audit.some(entry => entry.event === 'Stock updated' && entry.detail.includes('Lakeside · Flat White')));
+      assert.ok(audit.some(entry => entry.event === 'Stock exhausted' && entry.detail.includes('Lakeside · Flat White')));
+    } finally {
+      await reader.cancel();
+    }
+  });
+
+  await t.test('full demo refunds are replay safe, retain stock consumption and leave the active pickup queue', async () => {
+    assert.ok((await request('pickup?store=north')).orders.some(order => order.number === adjustedOrder.number));
+    const before = await request('availability?storeId=north');
+    assert.equal(before.items.find(item => item.itemId === 'pain-au-chocolat').quantity, 1);
+    refundRequest = { idempotencyKey: randomUUID(), reason: '  Customer changed plans  ', amountCents: 1 };
+    await refund(adjustedOrder, { ...refundRequest, reason: ' ' }, 422);
+    await refund(adjustedOrder, { ...refundRequest, reason: 'x'.repeat(161) }, 422);
+    const attempts = await Promise.all(Array.from({ length: 8 }, () => refund(adjustedOrder, refundRequest)));
+    assert.equal(attempts.filter(record => !record.duplicate).length, 1);
+    assert.equal(new Set(attempts.map(record => record.order.refund.id)).size, 1);
+    refundedOrder = attempts[0].order;
+    assert.equal(refundedOrder.refund.amountCents, adjustedOrder.totalCents);
+    assert.equal(refundedOrder.refund.reason, 'Customer changed plans');
+    assert.equal(refundedOrder.tender.method, 'cash');
+    assert.equal(refundedOrder.status, adjustedOrder.status);
+    await refund(adjustedOrder, { ...refundRequest, idempotencyKey: randomUUID() }, 409);
+    await refund(adjustedOrder, { ...refundRequest, reason: 'Different reason' }, 409);
+    await refund(firstOrder, refundRequest, 409);
+    await status(adjustedOrder, 'preparing', 409);
+    assert.deepEqual(await request('availability?storeId=north'), before);
+    assert.ok(!(await request('pickup?store=north')).orders.some(order => order.number === adjustedOrder.number));
+    assert.equal((await request('orders')).counts.refunded, 1);
+    const audits = (await request('audit')).audit.filter(entry => entry.event === 'Demo refund recorded');
+    assert.equal(audits.length, 1);
+    assert.ok(audits[0].detail.includes(`${adjustedOrder.number} · North Loop · 634 cents`));
+  });
+
+  await t.test('UTC sales and CSV reconcile orders and refunds, and survive restart with inventory', async () => {
+    const date = adjustedOrder.createdAt.slice(0, 10);
+    const end = refundedOrder.refund.createdAt.slice(0, 10);
+    const filters = `storeId=north&from=${date}&to=${end}`;
+    const report = await request('reports/sales?' + filters);
+    assert.deepEqual(report.totals, {
+      orderCount: 1, grossCents: 525, discountCents: 53, taxCents: 39, tipCents: 123,
+      chargedCents: 634, refundCount: 1, refundCents: 634, netCents: 0,
+    });
+    assert.equal(report.stores.length, 1);
+    assert.equal(report.stores[0].storeName, 'North Loop');
+    assert.equal(report.days[0].date, date);
+    assert.equal(report.days.at(-1).date, end);
+    assert.equal((await request('reports/sales?storeId=north&from=2098-01-01')).totals.orderCount, 0);
+    await request('reports/sales?from=2026-02-30', undefined, 422);
+    await request('reports/sales?from=2026-01-10&to=2026-01-09', undefined, 422);
+    await request('reports/sales?storeId=bogus', undefined, 422);
+    const response = await fetch(`${origin}/api/reports/sales.csv?${filters}`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /^text\/csv/);
+    assert.match(response.headers.get('content-disposition'), /fold-sales\.csv/);
+    const csv = await response.text();
+    assert.match(csv, /"total","","north","","1","525","53","39","123","634","1","634","0"/);
+    assert.ok(!csv.includes(adjustedOrder.note) && !csv.includes(refundedOrder.refund.reason));
+    await stop('SIGKILL');
+    await start();
+    assert.deepEqual(await request('reports/sales?' + filters), report);
+    assert.equal((await request('availability?storeId=north')).items[0].quantity, 1);
+    const reopened = await refund(adjustedOrder, refundRequest);
+    assert.equal(reopened.duplicate, true);
+    assert.deepEqual(reopened.order, refundedOrder);
+  });
+
+  await t.test('reports attribute a later refund to its own date and retain older order receipts', async () => {
+    const { session } = await open('market-01');
+    const original = cart(session.id);
+    const { order } = await checkout(original);
+    await stop();
+    const database = new DatabaseSync(join(data, 'fold.sqlite'));
+    database.prepare(`
+      UPDATE orders SET receipt = json_remove(receipt, '$.discount', '$.discountCents', '$.taxableSubtotalCents', '$.tipCents', '$.note')
+      WHERE id = ?
+    `).run(order.id);
+    database.prepare(`
+      UPDATE orders SET receipt = json_set(receipt, '$.createdAt', '2026-01-06T23:59:59.999Z') WHERE id = ?
+    `).run(adjustedOrder.id);
+    database.prepare("UPDATE refund SET created_at = '2026-01-07T00:00:00.000Z' WHERE order_id = ?").run(adjustedOrder.id);
+    database.close();
+    await start();
+    const replay = await checkout({ ...original, discount: 'none', tipCents: 0, note: '' }, 200);
+    assert.equal(replay.duplicate, true);
+    assert.deepEqual(replay.order, order);
+    const sold = await request('reports/sales?storeId=north&from=2026-01-06&to=2026-01-06');
+    const returned = await request('reports/sales?storeId=north&from=2026-01-07&to=2026-01-07');
+    assert.equal(sold.totals.netCents, 634);
+    assert.equal(sold.totals.refundCount, 0);
+    assert.equal(returned.totals.netCents, -634);
+    assert.equal(returned.totals.orderCount, 0);
+    assert.equal(returned.totals.refundCount, 1);
+  });
 });

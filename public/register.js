@@ -2,9 +2,9 @@
 
 (() => {
   const { api, escape, icon, money, showNotice } = Fold;
+  const workflow = FoldRegisterWorkflow;
   const node = (name) => document.getElementById("reg-" + name);
   const dialog = node("dialog");
-  const hotKeys = ["flat-white", "iced-matcha", "almond-croissant", "pain-au-chocolat"];
   const maxQuantity = 20;
   const maxLines = 20;
   const pageSize = 24;
@@ -19,6 +19,10 @@
   let receipt = null;
   let sale = [];
   let service = "here";
+  let adjustments = workflow.adjustments();
+  let availability = new Map();
+  let availabilityId = 0;
+  let cannotQuote = false;
   let quote = null;
   let attempt = null;
   let paying = false;
@@ -35,6 +39,12 @@
   let fleetId = 0;
   let quoteId = 0;
   let quoteTimer;
+  let recallBusy = false;
+  let recent = [];
+  let recentId = 0;
+  let tenderMethod = "card-demo";
+  const projector = workflow.customerDisplay(counterSnapshot);
+  const hotKeys = () => workflow.keys(deviceId);
 
   function read(key) {
     try { return JSON.parse(sessionStorage.getItem("fold-register:" + key)); }
@@ -45,11 +55,12 @@
     try {
       if (value === null) sessionStorage.removeItem("fold-register:" + key);
       else sessionStorage.setItem("fold-register:" + key, JSON.stringify(value));
-    } catch { /* The cashier can continue without browser storage. */ }
+      return true;
+    } catch { return false; }
   }
 
   function save() {
-    if (session) write(deviceId, { sessionId: session.id, sale, service, attempt, receipt });
+    if (session) write(deviceId, { sessionId: session.id, sale, service, attempt, receipt, ...adjustments });
   }
 
   function announce(text) { node("announcement").textContent = text; }
@@ -79,6 +90,7 @@
       }
       select.value = deviceId;
       select.disabled = loading || !devices.length;
+      node("counter").href = "/counter?device=" + encodeURIComponent(deviceId);
       connection.textContent = "Connected";
       connection.classList.add("online");
       connection.classList.remove("offline");
@@ -105,12 +117,21 @@
   async function load({ fresh = false, keepFilters = false } = {}) {
     const id = ++loadId;
     const target = deviceId;
-    const draft = fresh ? null : read(target);
+    const saved = fresh ? null : read(target);
+    const draft = saved && !workflow.parked(target).some((ticket) => ticket.sessionId === saved.sessionId) ? saved : null;
     if (fresh) write(target, null);
     loading = true;
     session = menu = receipt = quote = attempt = null;
     sale = [];
     service = "here";
+    adjustments = workflow.adjustments();
+    tenderMethod = read("tender:" + target) === "cash" ? "cash" : "card-demo";
+    availability = new Map();
+    availabilityId += 1;
+    cannotQuote = false;
+    projector.start(deviceId);
+    node("counter").href = "/counter?device=" + encodeURIComponent(deviceId);
+    node("edit-keys").disabled = true;
     if (!keepFilters) {
       category = "all";
       maximum = pageSize;
@@ -150,6 +171,7 @@
       menu = data.menu;
       if (restored) {
         service = draft.service === "to-go" ? "to-go" : "here";
+        adjustments = workflow.adjustments(draft);
         receipt = savedOrder;
         if (!receipt) {
           sale = (draft.sale || []).filter((line) => item(line.itemId));
@@ -160,11 +182,13 @@
       write("last", target);
       save();
       node("search").disabled = false;
+      node("edit-keys").disabled = false;
       renderMenuControls();
       renderProducts();
       renderTicket();
       scheduleQuote();
       versionStatus();
+      refreshAvailability();
       if (receipt) showReceipt();
       else if (attempt) showPending();
     } catch (error) {
@@ -184,10 +208,15 @@
   function renderMenuControls() {
     node("categories").innerHTML = [{ id: "all", name: "All items" }, ...menu.categories].map((entry) =>
       `<button class="reg-category" type="button" data-reg-category="${escape(entry.id)}" aria-pressed="${category === entry.id}">${escape(entry.name)}</button>`).join("");
-    node("quick").innerHTML = hotKeys.map((id, index) => {
+    renderQuickKeys();
+  }
+
+  function renderQuickKeys() {
+    node("quick").innerHTML = hotKeys().map((id, index) => {
       const product = item(id);
       if (!product) return "";
-      return `<button class="reg-quick-key" type="button" data-product="${id}" aria-label="Quick add ${escape(product.name)}" aria-keyshortcuts="Alt+${index + 1}"><span>${escape(product.name)}</span><kbd>Alt+${index + 1}</kbd></button>`;
+      const stock = remaining(id);
+      return `<button class="reg-quick-key" type="button" data-product="${escape(id)}" aria-label="Quick add ${escape(product.name)}${stock <= 0 ? " (sold out)" : ""}" aria-keyshortcuts="Alt+${index + 1}" ${stock <= 0 ? "disabled" : ""}><span>${escape(product.name)}</span><kbd>Alt+${index + 1}</kbd></button>`;
     }).join("");
   }
 
@@ -199,21 +228,25 @@
       return (category === "all" || category === product.categoryId) && query.every((term) => searchable.includes(term));
     });
     node("result-count").textContent = results.length + (results.length === 1 ? " item" : " items");
+    node("clear-search").hidden = !node("search").value && category === "all";
     if (!results.length) {
       node("products").innerHTML = '<div class="empty-state"><strong>No matching products</strong><p>Change the search or choose another category.</p></div>';
       return;
     }
-    const cards = results.slice(0, maximum).map((product) => `
-      <button class="reg-key" type="button" data-product="${escape(product.id)}" data-category="${escape(product.categoryId)}" aria-label="Add ${escape(product.name)}, ${money(product.priceCents)}">
+    const cards = results.slice(0, maximum).map((product) => {
+      const stock = remaining(product.id);
+      const status = stock <= 0 ? "Sold out" : Number.isFinite(stock) ? stock + " available" : "";
+      return `<button class="reg-key" type="button" data-product="${escape(product.id)}" data-category="${escape(product.categoryId)}" aria-label="Add ${escape(product.name)}, ${money(product.priceCents)}${status ? ", " + status : ""}" ${stock <= 0 ? "disabled" : ""}>
         <span class="reg-key-name">${escape(product.name)}</span>
-        <span class="reg-key-bottom"><strong>${money(product.priceCents)}</strong>${icon("plus")}</span>
-      </button>`).join("");
+        <span class="reg-key-bottom"><strong>${money(product.priceCents)}</strong>${status ? `<small class="reg-stock">${status}</small>` : icon("plus")}</span>
+      </button>`;
+    }).join("");
     node("products").innerHTML = cards + (maximum < results.length
       ? `<button class="button reg-full-row" type="button" data-reg-more>Show ${Math.min(pageSize, results.length - maximum)} more</button>` : "");
     if (focusIndex !== undefined) node("products").querySelectorAll("[data-product]")[focusIndex]?.focus();
   }
 
-function selected(product, modifiers) {
+  function selected(product, modifiers) {
     return product.modifiers.map((group) => group.options.find((option) => option.id === modifiers[group.id])).filter(Boolean);
   }
 
@@ -226,11 +259,11 @@ function selected(product, modifiers) {
       [group.id, (group.options.find((option) => option.id === group.defaultOptionId) || group.options[0]).id]));
   }
 
-  function stepper(count, name, index = "") {
+  function stepper(count, name, index = "", stock = Infinity) {
     return `<div class="stepper">
       <button type="button" data-step="-1" data-row="${index}" aria-label="Decrease ${escape(name)} quantity" ${count <= 1 ? "disabled" : ""}>${icon("minus")}</button>
       <span>${count}</span>
-      <button type="button" data-step="1" data-row="${index}" aria-label="Increase ${escape(name)} quantity" ${count >= maxQuantity ? "disabled" : ""}>${icon("plus")}</button>
+      <button type="button" data-step="1" data-row="${index}" aria-label="Increase ${escape(name)} quantity" ${count >= maxQuantity || stock < 1 ? "disabled" : ""}>${icon("plus")}</button>
     </div>`;
   }
 
@@ -243,7 +276,7 @@ function selected(product, modifiers) {
       return `<div class="reg-line">
         <div class="reg-line-main"><strong>${escape(product.name)}</strong>${names.length ? `<small>${escape(names.join(" · "))}</small>` : ""}</div>
         <span class="reg-line-price">${money(price(product, line.modifiers) * line.quantity)}</span>
-        <div class="reg-line-controls">${stepper(line.quantity, product.name, index)}
+        <div class="reg-line-controls">${stepper(line.quantity, product.name, index, remaining(product.id))}
           <div class="reg-line-actions">
             ${product.modifiers.length ? `<button class="reg-text-button" type="button" data-edit="${index}" aria-label="Edit options for ${escape(product.name)}">Edit options</button>` : ""}
             <button class="reg-text-button reg-action-void" type="button" data-void-line="${index}" aria-label="Void ${escape(product.name)} line">Void</button>
@@ -252,6 +285,10 @@ function selected(product, modifiers) {
       </div>`;
     }).join("") : `<div class="reg-empty-ticket">${icon("bag")}<strong>Ticket is empty</strong><p>Use a product key to add an item.</p></div>`;
     node("void").disabled = !sale.length || Boolean(attempt);
+    node("park").disabled = !session || !sale.length || Boolean(attempt || receipt);
+    node("adjust").disabled = !session || !sale.length || Boolean(attempt || receipt);
+    node("adjust").textContent = adjustments.note || adjustments.discount !== "none" || adjustments.tipCents ? "Edit sale adjustments" : "Adjust sale";
+    updateHeldCount();
     node("service").querySelectorAll("button").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.service === service));
       button.disabled = !session || Boolean(attempt || receipt);
@@ -271,21 +308,87 @@ function selected(product, modifiers) {
     node("mobile-ticket").textContent = "View ticket · " + qty + (qty === 1 ? " item" : " items");
   }
 
+  function remaining(id) {
+    const stock = availability.get(id);
+    if (!stock) return Infinity;
+    if (!stock.available) return 0;
+    if (!Number.isInteger(stock.quantity)) return Infinity;
+    const inTicket = sale.reduce((sum, line) => sum + (line.itemId === id ? line.quantity : 0), 0);
+    return Math.max(0, stock.quantity - inTicket);
+  }
+
+  function refreshMenuInventory() {
+    const productButton = document.activeElement.closest?.("[data-product]");
+    const parent = productButton?.closest("#reg-products, #reg-quick");
+    renderQuickKeys();
+    renderProducts();
+    if (!parent) return;
+    const replacement = [...parent.querySelectorAll("[data-product]")].find((button) =>
+      button.dataset.product === productButton.dataset.product && !button.disabled);
+    (replacement || node("search")).focus({ preventScroll: true });
+  }
+
+  async function refreshAvailability() {
+    const storeId = activeDevice()?.storeId;
+    if (!storeId || !menu) return;
+    const id = ++availabilityId;
+    try {
+      const data = await api("/api/availability?storeId=" + encodeURIComponent(storeId));
+      if (id !== availabilityId || activeDevice()?.storeId !== storeId) return;
+      const next = new Map(data.items.map((stock) => [stock.itemId, stock]));
+      if (JSON.stringify([...availability]) === JSON.stringify([...next])) return;
+      availability = next;
+      refreshMenuInventory();
+      renderTicket();
+      if (cannotQuote && sale.length) scheduleQuote(true);
+    } catch { /* Authoritative checkout safeguards remain active. */ }
+  }
+
+  function counterSnapshot() {
+    const source = receipt || quote;
+    const items = receipt ? receipt.items.map((line) => ({
+      name: line.name, quantity: line.quantity, lineTotalCents: line.lineTotalCents,
+      modifiers: (line.modifiers || []).map((option) => option.name)
+    })) : sale.map((line) => {
+      const product = item(line.itemId);
+      return { name: product.name, quantity: line.quantity, lineTotalCents: price(product, line.modifiers) * line.quantity,
+        modifiers: selected(product, line.modifiers).map((option) => option.name) };
+    });
+    return {
+      state: receipt ? "complete" : !sale.length ? "idle" : (stage === "tender" || attempt) ? "payment" : "ticket",
+      version: receipt?.version || menu?.version || null,
+      fulfillment: receipt?.fulfillment || service,
+      items,
+      subtotalCents: source?.subtotalCents ?? items.reduce((sum, line) => sum + line.lineTotalCents, 0),
+      discountCents: source?.discountCents ?? 0, taxCents: source?.taxCents ?? 0,
+      tipCents: source?.tipCents ?? adjustments.tipCents,
+      totalCents: source?.totalCents ?? (items.length ? null : 0),
+      orderNumber: receipt?.number || null,
+      pickup: receipt?.pickup || null,
+    };
+  }
+
   function paintTotal(waiting = false) {
     const total = sale.length ? quote : zero;
     node("totals").setAttribute("aria-busy", String(waiting));
     node("subtotal").textContent = total ? money(total.subtotalCents) : "—";
+    node("discount-row").hidden = adjustments.discount === "none";
+    node("discount").textContent = total ? "−" + money(total.discountCents || 0) : "—";
     node("tax").textContent = total ? money(total.taxCents) : "—";
+    node("tip-row").hidden = !adjustments.tipCents;
+    node("tip").textContent = total ? money(total.tipCents || 0) : "—";
     node("total").textContent = total ? money(total.totalCents) : "—";
     node("tender").disabled = !(sale.length && quote && session) || Boolean(attempt || receipt);
+    projector.publish();
   }
 
-  function payload() { return { sessionId: session.id, fulfillment: service, items: sale }; }
+  function payload() { return { sessionId: session.id, fulfillment: service, items: sale, ...adjustments }; }
 
   function scheduleQuote(now = false) {
     const id = ++quoteId;
     clearTimeout(quoteTimer);
     quote = null;
+    cannotQuote = false;
     showNotice(node("quote-error"), "");
     const needsQuote = Boolean(session && sale.length && !receipt && !attempt);
     paintTotal(needsQuote);
@@ -297,6 +400,7 @@ function selected(product, modifiers) {
         paintTotal();
       }).catch((error) => {
         if (id !== quoteId) return;
+        cannotQuote = true;
         paintTotal();
         const note = node("quote-error");
         showNotice(note, error.message, "error");
@@ -315,10 +419,15 @@ function selected(product, modifiers) {
   function changed(focus) {
     save();
     renderTicket(focus);
+    if (availability.size && menu) refreshMenuInventory();
     scheduleQuote();
   }
 
   function commit(product, modifiers, quantity, index = null) {
+    const difference = quantity - (index === null ? 0 : sale[index].quantity);
+    if (difference > 0 && remaining(product.id) < difference) {
+      return "There is insufficient stock for that quantity.";
+    }
     const matching = sale.findIndex((row, at) => at !== index && row.itemId === product.id &&
       product.modifiers.every((group) => row.modifiers[group.id] === modifiers[group.id]));
     if (matching >= 0 && sale[matching].quantity + quantity > maxQuantity) return "The ticket already holds the maximum quantity for these options.";
@@ -352,9 +461,10 @@ function selected(product, modifiers) {
     stage = kind;
     if (trigger && !dialog.open) focusOrigin = trigger;
     const close = closable ? `<button class="icon-button dialog-close" type="button" data-close aria-label="Close">${icon("close")}</button>` : "";
-    dialog.innerHTML = `${close}<div class="dialog-body${kind === "receipt" ? " reg-receipt" : ""}"><h2 id="reg-dialog-title">${escape(title)}</h2>${content}</div>`;
+    dialog.innerHTML = `${close}<div class="dialog-body${kind.includes("receipt") ? " reg-receipt" : ""}"><h2 id="reg-dialog-title">${escape(title)}</h2>${content}</div>`;
     if (!dialog.open) dialog.showModal();
     if (focus) dialog.querySelector(focus)?.focus();
+    projector.publish();
   }
 
   function openEditor(product, index, trigger) {
@@ -379,20 +489,21 @@ function selected(product, modifiers) {
     node("editor-price").textContent = money(price(editor.product, editor.modifiers) * editor.quantity);
   }
 
-function openTender(trigger) {
+  function openTender(trigger) {
     if (!quote || dialog.open || node("tender").disabled) return;
-    payment = { method: "card-demo", received: "" };
+    payment = { method: tenderMethod, received: "" };
     openDialog("tender", "Take payment", `
       <div class="reg-tender-total"><span>Amount due</span><strong>${money(quote.totalCents)}</strong></div>
       <div class="reg-tender-methods" aria-label="Tender method">
         <button class="button" type="button" data-method="card-demo" aria-pressed="true">Card (demo)</button>
         <button class="button" type="button" data-method="cash" aria-pressed="false">Cash</button>
-      </div>
+      </div>${quote.discountCents || quote.tipCents ? totalsMarkup(quote) : ""}
       <form id="reg-payment-form"><div id="reg-payment-fields"></div>
         <div class="dialog-actions"><button class="button" type="button" data-close>Back</button>
           <button class="button primary" type="submit" id="reg-confirm-payment"></button></div>
-      </form>`, trigger, true, '[data-method="card-demo"]');
+      </form>`, trigger, true, '[data-method="' + payment.method + '"]');
     renderPayment();
+    if (payment.method === "cash") node("cash-amount").focus();
   }
 
   function cents(input) {
@@ -429,6 +540,8 @@ function openTender(trigger) {
       <label class="field">Cash received<input id="reg-cash-amount" inputmode="decimal" type="text" autocomplete="off" placeholder="0.00" value="${escape(payment.received)}" aria-describedby="reg-cash-change"></label>
       <div class="reg-cash-keys"><button class="button" type="button" data-cash="${total}">Exact</button>
         ${amounts.map((amount) => `<button class="button" type="button" data-cash="${amount}">${money(amount)}</button>`).join("")}</div>
+      <div class="reg-cash-keys" aria-label="Add bills">${[100, 500, 1000, 2000].map((bill) =>
+        `<button class="button" type="button" data-bill="${bill}">+${money(bill)}</button>`).join("")}</div>
       <div class="reg-change" id="reg-cash-change"><span id="reg-change-label">Change due</span><strong id="reg-change-amount">—</strong></div></div>`;
     updateCash();
   }
@@ -448,7 +561,7 @@ function openTender(trigger) {
       const { order } = await api("/api/orders", attempt);
       finish(order);
     } catch (error) {
-      if (!error.status || error.status >= 500 || [408, 409, 429].includes(error.status)) {
+      if (error.code !== "inventory_unavailable" && (!error.status || error.status >= 500 || [408, 409, 429].includes(error.status))) {
         const pin = await api("/api/sessions/" + encodeURIComponent(session.id)).then((data) => data.session).catch(() => null);
         const order = await recover(pin).catch(() => null);
         if (order) finish(order);
@@ -457,6 +570,7 @@ function openTender(trigger) {
         attempt = null;
         save();
         scheduleQuote();
+        if (error.code === "inventory_unavailable") refreshAvailability();
         openDialog("payment-error", "Payment could not be recorded", `
           <p class="notice error" role="alert">${escape(error.message)}</p>
           <div class="dialog-actions"><button class="button" type="button" data-close>Back to ticket</button></div>`,
@@ -468,6 +582,8 @@ function openTender(trigger) {
   }
 
   function finish(order) {
+    tenderMethod = order.tender?.method === "cash" ? "cash" : "card-demo";
+    write("tender:" + deviceId, tenderMethod);
     receipt = order;
     attempt = null;
     sale = [];
@@ -475,8 +591,15 @@ function openTender(trigger) {
     showReceipt();
   }
 
-  function showReceipt() {
-    const order = receipt;
+  function totalsMarkup(order) {
+    return `<div class="quote-breakdown reg-breakdown"><div class="total"><span>Subtotal</span><span>${money(order.subtotalCents)}</span></div>
+      ${order.discountCents ? `<div class="total"><span>Discount</span><span>−${money(order.discountCents)}</span></div>` : ""}
+      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div>
+      ${order.tipCents ? `<div class="total"><span>Tip</span><span>${money(order.tipCents)}</span></div>` : ""}
+      <div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div></div>`;
+  }
+
+  function showReceipt(order = receipt, historical = false) {
     const tender = order.tender;
     const fulfillment = order.fulfillment === "to-go" ? "To go" : "For here";
     const method = tender?.method === "cash" ? "Cash" : tender?.method === "card-demo" ? "Card (demo)" : "";
@@ -484,18 +607,16 @@ function openTender(trigger) {
       ? `<div class="total"><span>Cash received</span><strong>${money(tender.receivedCents)}</strong></div><div class="total"><span>Change due</span><strong>${money(tender.changeCents)}</strong></div>`
       : "";
     const pickup = order.pickup ? `<div class="receipt-pickup"><strong>${escape(order.pickup.title)}</strong><p>${escape(order.pickup.description)}</p></div>` : "";
-    openDialog("receipt", "Sale complete", `
+    openDialog(historical ? "history-receipt" : "receipt", historical ? "Sale receipt" : "Sale complete", `
       <p class="reg-receipt-number">${escape(order.number)}</p>
       <p class="reg-receipt-meta">${escape(order.storeName)} · ${fulfillment} · Menu v${escape(order.version)}${method ? " · " + method : ""}</p>
       <ul class="checkout-lines">${order.items.map((line) =>
         `<li><div><strong>${line.quantity} × ${escape(line.name)}</strong>${line.modifiers?.length ? `<small>${escape(line.modifiers.map((option) => option.name).join(" · "))}</small>` : ""}</div><strong>${money(line.lineTotalCents)}</strong></li>`
       ).join("")}</ul>
-      <div class="quote-breakdown"><div class="total"><span>Subtotal</span><span>${money(order.subtotalCents)}</span></div>
-      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div>
-      <div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div></div>${paid}${pickup}
+      ${totalsMarkup(order)}${paid}${pickup}
       <div class="dialog-actions"><button class="button" type="button" data-print>Print receipt</button>
-      <button class="button primary" type="button" data-next>Next sale</button></div>`,
-    null, false, "[data-next]");
+      ${historical ? '<button class="button primary" type="button" data-recent-back>Back to recent sales</button>' : '<button class="button primary" type="button" data-next>Next sale</button>'}</div>`,
+    null, historical, historical ? "[data-recent-back]" : "[data-next]");
   }
 
   async function nextSale() {
@@ -513,7 +634,130 @@ function openTender(trigger) {
     node("void"), true, ".dialog-actions [data-close]");
   }
 
-node("device").addEventListener("change", () => {
+  function updateHeldCount() {
+    const count = workflow.parked(deviceId).length;
+    node("held-count").textContent = count;
+    node("held").setAttribute("aria-label", "Parked tickets, " + count);
+  }
+
+  function parkDialog() {
+    if (node("park").disabled || dialog.open) return;
+    const defaultLabel = item(sale[0].itemId).name;
+    openDialog("park", "Park this ticket", `<form id="reg-park-form">
+      <label class="field">Ticket label<input id="reg-park-label" type="text" maxlength="48" placeholder="${escape(defaultLabel)}" autocomplete="off"></label>
+      <p class="dialog-description">Recall this ticket at the same register. It keeps Menu v${menu.version}.</p>
+      <p class="notice error" id="reg-park-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary">Park and start sale</button></div>
+      </form>`, node("park"), true, "#reg-park-label");
+  }
+
+  async function park(form) {
+    const submit = form.querySelector("[type=submit]");
+    if (submit.disabled || !session || !sale.length || attempt || recallBusy) return;
+    const terminal = deviceId;
+    submit.disabled = true;
+    recallBusy = true;
+    try {
+      await workflow.lockParked(terminal, () => {
+        const tickets = workflow.parked(terminal);
+        if (tickets.length >= 25) throw new Error("This register has 25 parked tickets. Recall or discard one first.");
+        const snapshot = {
+          sessionId: session.id, version: menu.version, sale, service, ...adjustments,
+          label: node("park-label").value.trim() || item(sale[0].itemId).name, time: Date.now()
+        };
+        workflow.replaceParked(terminal, [snapshot, ...tickets.filter((entry) => entry.sessionId !== session.id)]);
+      });
+      await nextSale();
+      announce("Ticket parked. A new sale is ready.");
+    } catch (error) {
+      showNotice(node("park-error"), error.message || "Ticket could not be parked. It is still open.", "error");
+      submit.disabled = false;
+    } finally {
+      recallBusy = false;
+    }
+  }
+
+  const shortTime = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short" });
+
+  function heldDialog(trigger = node("held")) {
+    const tickets = workflow.parked(deviceId);
+    const rows = tickets.map((ticket) => {
+      const count = ticket.sale.reduce((sum, line) => sum + line.quantity, 0);
+      return `<li><div><strong>${escape(ticket.label)}</strong><small>${count} ${count === 1 ? "item" : "items"} · Menu v${escape(ticket.version)} · ${escape(shortTime.format(ticket.time))}</small></div>
+        <div class="reg-row-actions"><button class="button" type="button" data-recall="${escape(ticket.sessionId)}" ${sale.length ? "disabled" : ""}>Recall</button>
+        <button class="button" type="button" data-discard="${escape(ticket.sessionId)}" aria-label="Discard ${escape(ticket.label)}">Discard</button></div></li>`;
+    }).join("");
+    const contents = rows ? `<ul class="reg-history-list">${rows}</ul>` : '<p class="dialog-description">No tickets are parked on this register.</p>';
+    openDialog("held", "Parked tickets", `${sale.length && rows ? '<p class="dialog-description">Park or finish the open sale before recalling another ticket.</p>' : ""}
+      <p id="reg-held-error" class="notice error" role="alert" hidden></p>${contents}`, trigger, true, ".dialog-close");
+    updateHeldCount();
+  }
+
+  async function recall(button) {
+    if (recallBusy || sale.length || attempt || receipt) return;
+    recallBusy = true;
+    button.disabled = true;
+    const terminal = deviceId;
+    try {
+      await workflow.lockParked(terminal, async () => {
+        const tickets = workflow.parked(terminal);
+        const target = tickets.find((ticket) => ticket.sessionId === button.dataset.recall);
+        if (!target) throw new Error("That ticket is no longer parked.");
+        const { session: pinned } = await api("/api/sessions/" + encodeURIComponent(target.sessionId));
+        if (pinned.deviceId !== terminal || pinned.orderId || pinned.version !== target.version) {
+          throw new Error("This ticket cannot be recalled. Check Recent sales for a completed transaction.");
+        }
+        const previous = read(terminal);
+        if (!write(terminal, target)) throw new Error("The browser could not restore this ticket. It is still parked.");
+        try { workflow.replaceParked(terminal, tickets.filter((ticket) => ticket !== target)); }
+        catch (error) {
+          write(terminal, previous);
+          throw error;
+        }
+      });
+      focusOrigin = null;
+      dialog.close();
+      await load({ keepFilters: true });
+      node("ticket").focus({ preventScroll: true });
+      announce("Parked ticket recalled.");
+    } catch (error) {
+      if (dialog.open) showNotice(node("held-error"), error.message, "error");
+      button.disabled = false;
+    } finally {
+      recallBusy = false;
+    }
+  }
+
+  function confirmDiscard(id) {
+    const chosen = workflow.parked(deviceId).find((ticket) => ticket.sessionId === id);
+    if (!chosen) { heldDialog(); return; }
+    openDialog("discard", "Discard parked ticket?", `<p class="dialog-description">${escape(chosen.label)} will be removed from this register.</p>
+      <p class="notice error" id="reg-held-error" hidden role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button" data-held-back>Keep ticket</button>
+      <button type="button" class="button primary" data-confirm-discard="${escape(id)}">Discard ticket</button></div>`,
+    null, true, "[data-held-back]");
+  }
+
+  async function discard(button) {
+    if (recallBusy) return;
+    recallBusy = true;
+    button.disabled = true;
+    const terminal = deviceId;
+    try {
+      await workflow.lockParked(terminal, () => {
+        workflow.replaceParked(terminal, workflow.parked(terminal).filter((ticket) => ticket.sessionId !== button.dataset.confirmDiscard));
+      });
+      heldDialog();
+      announce("Parked ticket discarded.");
+    } catch (error) {
+      showNotice(node("held-error"), error.message, "error");
+      button.disabled = false;
+    } finally {
+      recallBusy = false;
+    }
+  }
+
+  node("device").addEventListener("change", () => {
     deviceId = node("device").value;
     const url = new URL(location.href);
     url.searchParams.set("device", deviceId);
@@ -528,9 +772,25 @@ node("device").addEventListener("change", () => {
   });
 
   node("search").addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || event.isComposing || !results.length) return;
+    if (event.isComposing || !menu) return;
+    if (event.key === "ArrowDown") {
+      const first = node("products").querySelector("[data-product]:not(:disabled)");
+      if (first) {
+        event.preventDefault();
+        first.focus();
+      }
+      return;
+    }
+    if (event.key === "Escape" && !node("clear-search").hidden) {
+      event.preventDefault();
+      clearSearch();
+      return;
+    }
+    if (event.key !== "Enter" || !node("search").value.trim()) return;
+    const first = results.find((product) => remaining(product.id) > 0);
+    if (!first) return;
     event.preventDefault();
-    add(results[0].id, node("search"), event.shiftKey);
+    add(first.id, node("search"), event.shiftKey);
     if (!dialog.open) {
       node("search").value = "";
       renderProducts();
@@ -546,6 +806,17 @@ node("device").addEventListener("change", () => {
     renderProducts();
   });
 
+  node("categories").addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const controls = Array.from(node("categories").querySelectorAll("button"));
+    const at = controls.indexOf(event.target);
+    if (at < 0) return;
+    const index = event.key === "Home" ? 0 : event.key === "End" ? controls.length - 1
+      : (at + controls.length + (event.key === "ArrowRight" ? 1 : -1)) % controls.length;
+    event.preventDefault();
+    controls[index].focus();
+  });
+
   function handleProductClick(event) {
     const entry = event.target.closest("[data-product]");
     if (entry) add(entry.dataset.product, entry, event.shiftKey);
@@ -559,6 +830,21 @@ node("device").addEventListener("change", () => {
 
   node("quick").addEventListener("click", handleProductClick);
   node("products").addEventListener("click", handleProductClick);
+  node("products").addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const keys = Array.from(node("products").querySelectorAll("[data-product]"));
+    const at = keys.indexOf(event.target);
+    if (at < 0) return;
+    const columns = getComputedStyle(node("products")).gridTemplateColumns.split(" ").length;
+    const offsets = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns };
+    const direction = event.key === "Home" ? 1 : event.key === "End" ? -1 : offsets[event.key];
+    let next = event.key === "Home" ? 0 : event.key === "End" ? keys.length - 1 : at + direction;
+    while (keys[next]?.disabled) next += direction;
+    if (keys[next]) {
+      event.preventDefault();
+      keys[next].focus();
+    }
+  });
 
   node("service").addEventListener("click", (event) => {
     const button = event.target.closest("[data-service]");
@@ -583,12 +869,20 @@ node("device").addEventListener("change", () => {
     if (button.dataset.step && button.dataset.row !== "") {
       const index = Number(button.dataset.row);
       const line = sale[index];
+      if (Number(button.dataset.step) > 0 && remaining(line.itemId) < 1) return;
       line.quantity = Math.min(maxQuantity, Math.max(1, line.quantity + Number(button.dataset.step)));
       changed('[data-row="' + index + '"][data-step="' + button.dataset.step + '"]');
     }
   });
 
   node("void").addEventListener("click", confirmVoid);
+  node("clear-search").addEventListener("click", clearSearch);
+  node("shortcuts").addEventListener("click", shortcutDialog);
+  node("park").addEventListener("click", parkDialog);
+  node("held").addEventListener("click", (event) => heldDialog(event.currentTarget));
+  node("recent").addEventListener("click", (event) => recentDialog(event.currentTarget));
+  node("edit-keys").addEventListener("click", keyDialog);
+  node("adjust").addEventListener("click", adjustmentDialog);
   node("tender").addEventListener("click", (event) => openTender(event.currentTarget));
   node("mobile-ticket").addEventListener("click", () => {
     node("ticket").scrollIntoView({ block: "start" });
@@ -604,6 +898,10 @@ node("device").addEventListener("change", () => {
   });
 
   dialog.addEventListener("input", (event) => {
+    if (event.target === node("note")) {
+      node("note-count").textContent = event.target.value.length + " / 240";
+      return;
+    }
     if (attempt || event.target !== node("cash-amount")) return;
     payment.received = event.target.value;
     updateCash();
@@ -612,10 +910,25 @@ node("device").addEventListener("change", () => {
   dialog.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button) return;
-    if (button.hasAttribute("data-close") && !paying && !attempt) dialog.close();
+    if (button.hasAttribute("data-close") && !paying && !attempt && !recallBusy) dialog.close();
     if (button.hasAttribute("data-next")) nextSale();
     if (button.hasAttribute("data-print")) window.print();
     if (button.hasAttribute("data-retry-payment")) sendPayment(button);
+    if (button.dataset.recall) recall(button);
+    if (button.dataset.discard && !recallBusy) confirmDiscard(button.dataset.discard);
+    if (button.dataset.confirmDiscard) discard(button);
+    if (button.hasAttribute("data-held-back") && !recallBusy) heldDialog();
+    if (button.hasAttribute("data-recent-back")) recentDialog();
+    if (button.dataset.receipt !== undefined && recent[Number(button.dataset.receipt)]) showReceipt(recent[Number(button.dataset.receipt)], true);
+    if (button.dataset.tip !== undefined && stage === "adjustments") {
+      node("tip-input").value = (Number(button.dataset.tip) / 100).toFixed(2);
+      node("tip-input").focus();
+    }
+    if (button.dataset.bill && stage === "tender" && !attempt) {
+      payment.received = (((cents(payment.received) || 0) + Number(button.dataset.bill)) / 100).toFixed(2);
+      node("cash-amount").value = payment.received;
+      updateCash();
+    }
     if (button.dataset.method && stage === "tender" && !attempt && payment.method !== button.dataset.method) {
       payment.method = button.dataset.method;
       renderPayment();
@@ -638,6 +951,9 @@ node("device").addEventListener("change", () => {
 
   dialog.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (event.target === node("park-form")) { park(event.target); return; }
+    if (event.target === node("adjust-form")) { saveAdjustments(event.target); return; }
+    if (event.target === node("key-form")) { saveKeys(event.target); return; }
     if (event.target === node("edit-form")) {
       const { product, modifiers, quantity, index } = editor;
       const error = commit(product, modifiers, quantity, index);
@@ -658,7 +974,7 @@ node("device").addEventListener("change", () => {
   });
 
   dialog.addEventListener("cancel", (event) => {
-    if (paying || attempt || receipt) event.preventDefault();
+    if (paying || attempt || receipt || recallBusy) event.preventDefault();
   });
   dialog.addEventListener("close", () => {
     stage = "";
@@ -666,6 +982,7 @@ node("device").addEventListener("change", () => {
     if (focusOrigin?.isConnected && !focusOrigin.disabled) focusOrigin.focus({ preventScroll: true });
     else if (focusOrigin && !node("search").disabled) node("search").focus({ preventScroll: true });
     focusOrigin = null;
+    projector.publish();
   });
 
   document.addEventListener("keydown", (event) => {
@@ -679,11 +996,115 @@ node("device").addEventListener("change", () => {
       event.preventDefault();
       openTender(node("tender"));
     }
-    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && /^[1-4]$/.test(event.key) && session) {
+    const actions = { F1: "shortcuts", F6: "park", F7: "held", F8: "recent", F9: "adjust" };
+    if (actions[event.key] && !node(actions[event.key]).disabled) {
       event.preventDefault();
-      add(hotKeys[Number(event.key) - 1], document.activeElement);
+      node(actions[event.key]).click();
+    }
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && /^[1-4]$/.test(event.key) && session) {
+      const product = hotKeys()[Number(event.key) - 1];
+      if (!product || remaining(product) < 1) return;
+      event.preventDefault();
+      add(product, document.activeElement);
     }
   });
+
+  async function recentDialog(trigger = node("recent")) {
+    const id = ++recentId;
+    const terminal = deviceId;
+    openDialog("recent", "Recent sales", '<p class="reg-loading" role="status">Loading this register’s sales…</p>', trigger, true, ".dialog-close");
+    try {
+      const result = await api("/api/recent-sales?device=" + encodeURIComponent(terminal));
+      if (id !== recentId || !dialog.open || stage !== "recent") return;
+      recent = result.orders || [];
+      const rows = recent.map((order, index) => `<li><div><strong>${escape(order.number)} · ${money(order.totalCents)}</strong>
+        <small>${escape(shortTime.format(new Date(order.createdAt)))} · ${order.tender?.method === "cash" ? "Cash" : "Card (demo)"}${order.refund ? " · Refunded" : ""} · Menu v${escape(order.version)}</small></div>
+        <button type="button" class="button" data-receipt="${index}" aria-label="View receipt ${escape(order.number)}">Receipt</button></li>`).join("");
+      openDialog("recent", "Recent sales", rows ? `<ul class="reg-history-list">${rows}</ul>` : '<p class="dialog-description">There are no recent sales on this register.</p>', null, true, ".dialog-close");
+    } catch (error) {
+      if (id === recentId && dialog.open && stage === "recent") {
+        openDialog("recent", "Recent sales", `<p class="notice error" role="status">${escape(error.message)}</p><button class="button" type="button" data-recent-back>Try again</button>`, null, true, "[data-recent-back]");
+      }
+    }
+  }
+
+  function adjustmentDialog() {
+    if (node("adjust").disabled || dialog.open) return;
+    const discounts = workflow.presets.map((preset) =>
+      `<option value="${escape(preset.id)}" ${adjustments.discount === preset.id ? "selected" : ""}>${escape(preset.label)}</option>`).join("");
+    openDialog("adjustments", "Adjust sale", `<form id="reg-adjust-form">
+      <label class="field">Staff note<textarea id="reg-note" name="note" rows="2" maxlength="240" aria-describedby="reg-note-count" placeholder="Add a note for staff">${escape(adjustments.note)}</textarea><small class="form-helper" id="reg-note-count">${adjustments.note.length} / 240</small></label>
+      <label class="field">Discount<select class="select" name="discount">${discounts}</select></label>
+      <label class="field">Tip<input type="text" inputmode="decimal" name="tip" id="reg-tip-input" value="${(adjustments.tipCents / 100).toFixed(2)}" aria-describedby="reg-tip-hint">
+        <small class="form-helper" id="reg-tip-hint">Choose an amount or enter up to $50.</small></label>
+      <div class="reg-cash-keys" aria-label="Quick tip amounts">${[0, 100, 200, 500].map((amount) => `<button type="button" class="button" data-tip="${amount}">${amount ? money(amount) : "No tip"}</button>`).join("")}</div>
+      <p class="notice error" id="reg-adjust-error" hidden role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary">Apply adjustments</button></div>
+    </form>`, node("adjust"), true, "#reg-note");
+  }
+
+  function saveAdjustments(form) {
+    const tipCents = form.elements.tip.value.trim() ? cents(form.elements.tip.value) : 0;
+    if (tipCents === null || tipCents > 5000) {
+      showNotice(node("adjust-error"), "Enter a tip between $0.00 and $50.00.", "error");
+      form.elements.tip.focus();
+      return;
+    }
+    adjustments = workflow.adjustments({ tipCents, discount: form.elements.discount.value, note: form.elements.note.value.trim() });
+    dialog.close();
+    changed();
+    announce("Sale adjustments updated.");
+  }
+
+  function keyDialog() {
+    if (!menu || dialog.open) return;
+    const current = hotKeys();
+    const sorted = [...menu.items].sort((left, right) => left.name.localeCompare(right.name));
+    const fields = Array.from({ length: 4 }, (_, index) => `<label class="field">Quick key ${index + 1}
+      <select class="select" name="quick"><option value="">No product</option>${sorted.map((product) =>
+        `<option value="${escape(product.id)}" ${current[index] === product.id ? "selected" : ""}>${escape(product.name)}</option>`).join("")}</select></label>`).join("");
+    openDialog("keys", "Edit quick keys", `<form id="reg-key-form"><div class="fields">${fields}</div>
+      <p class="notice error" id="reg-key-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button" data-close>Cancel</button><button type="submit" class="button primary">Save quick keys</button></div></form>`, node("edit-keys"), true, "select");
+  }
+
+  function saveKeys(form) {
+    const favorites = new FormData(form).getAll("quick");
+    const chosen = favorites.filter(Boolean);
+    if (new Set(chosen).size !== chosen.length) {
+      showNotice(node("key-error"), "Assign each product to one quick key.", "error");
+      return;
+    }
+    try {
+      workflow.replaceKeys(deviceId, favorites);
+      dialog.close();
+      renderQuickKeys();
+      announce("Quick keys saved for this register.");
+    } catch {
+      showNotice(node("key-error"), "Quick keys could not be saved on this register.", "error");
+    }
+  }
+
+  function shortcutDialog() {
+    if (dialog.open) return;
+    const keys = [
+      ["F2", "Search the menu"], ["Enter", "Add the first available search result"], ["Shift+Enter", "Customize the first available search result"],
+      ["Alt+1–4", "Use a quick key"], ["F4", "Take payment"], ["F6", "Park ticket"],
+      ["F7", "Show parked tickets"], ["F8", "Show recent sales"], ["F9", "Adjust sale"]
+    ];
+    openDialog("shortcuts", "Register shortcuts", `<dl class="reg-shortcuts">${keys.map(([key, text]) =>
+      `<div><dt><kbd>${escape(key)}</kbd></dt><dd>${escape(text)}</dd></div>`).join("")}</dl>`, node("shortcuts"), true, ".dialog-close");
+  }
+
+  function clearSearch() {
+    if (!menu) return;
+    node("search").value = "";
+    category = "all";
+    maximum = pageSize;
+    renderMenuControls();
+    renderProducts();
+    node("search").focus();
+  }
 
   async function initialize() {
     if ("IntersectionObserver" in window) {
@@ -695,15 +1116,25 @@ node("device").addEventListener("change", () => {
     }
     await fleet();
     await load();
+    addEventListener("storage", (event) => {
+      if (event.key === "fold-register:parked:" + deviceId) updateHeldCount();
+      if (event.key === "fold-register:quick-keys:" + deviceId && menu) renderQuickKeys();
+    });
     if ("EventSource" in window) {
       const events = new EventSource("/api/events");
       events.addEventListener("open", fleet);
       events.addEventListener("message", (event) => {
-        try { if (JSON.parse(event.data).type === "fleet") fleet(); }
+        try {
+          const { type } = JSON.parse(event.data);
+          if (type === "fleet") fleet();
+          if (type === "inventory") refreshAvailability();
+        }
         catch { /* Ignore events from other protocol versions. */ }
       });
     }
     setInterval(fleet, 12000);
+    setInterval(refreshAvailability, 12000);
+    setInterval(() => projector.publish(true), 8000);
   }
 
   initialize();

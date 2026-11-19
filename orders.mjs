@@ -1,12 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import { devices } from './catalog.mjs';
+import { createInventory } from './inventory.mjs';
 import { now } from './store.mjs';
+import { cleanText, HttpError, isObject, isRetryKey, isUuid } from './validation.mjs';
 
 const taxBasisPoints = 825;
 const states = ['received', 'preparing', 'ready', 'completed'];
-const storeIds = new Set(devices.map(device => device.storeId));
-const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const isUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+export const locations = new Map(devices.map(device => [device.storeId, device.storeName]));
+const discounts = [
+  { id: 'none', label: 'No discount', basisPoints: 0 },
+  { id: 'staff-10', label: 'Staff 10%', basisPoints: 1000 },
+  { id: 'service-15', label: 'Service recovery 15%', basisPoints: 1500 },
+];
+const noteLimit = 240;
+const tipLimitCents = 5000;
+const cashLimitCents = 1_000_000;
+export const posPolicy = { discounts, taxBasisPoints, tipLimitCents, noteLimit, cashLimitCents };
+const roundBasisPoints = (amount, basisPoints) => Math.floor((amount * basisPoints + 5000) / 10000);
+const selectOrder = `
+  SELECT orders.*, refund.id AS refund_id, refund.amount_cents AS refund_amount,
+    refund.reason AS refund_reason, refund.created_at AS refund_created
+  FROM orders LEFT JOIN refund ON orders.id = refund.order_id
+`;
 
 function resolveTender(input, totalCents) {
   if (input === undefined) return null; // Self-service checkout uses the existing demo path.
@@ -17,17 +32,28 @@ function resolveTender(input, totalCents) {
   }
   const { receivedCents } = input;
   if (!Number.isSafeInteger(receivedCents) || receivedCents < totalCents) throw new HttpError(422, 'Cash received must cover the total.');
+  if (receivedCents > cashLimitCents) throw new HttpError(422, 'Cash received exceeds the demo register limit.');
   return { method: 'cash', receivedCents, changeCents: receivedCents - totalCents };
 }
 
-export class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
+function adjustments({ discount = 'none', tipCents = 0, note }, subtotalCents) {
+  const preset = discounts.find(entry => entry.id === discount);
+  if (!preset) throw new HttpError(422, 'Choose a supported discount preset.');
+  if (!Number.isInteger(tipCents) || tipCents < 0 || tipCents > tipLimitCents) {
+    throw new HttpError(422, 'Tip must be an amount between $0 and $50 in whole cents.');
   }
+  const discountCents = roundBasisPoints(subtotalCents, preset.basisPoints);
+  const taxableSubtotalCents = subtotalCents - discountCents;
+  const taxCents = roundBasisPoints(taxableSubtotalCents, taxBasisPoints);
+  return {
+    discount, discountCents, taxableSubtotalCents, taxCents, tipCents, note: cleanText(note, noteLimit, 'Staff note'),
+    totalCents: taxableSubtotalCents + taxCents + tipCents,
+  };
 }
 
 export function createOrders({ store, live, notify }) {
+  const inventory = createInventory({ store, live, locations, notify });
+
   function session(id) {
     if (!isUuid(id)) throw new HttpError(404, 'Kiosk session is unavailable.');
     const row = store.get(`
@@ -82,33 +108,42 @@ export function createOrders({ store, live, notify }) {
       return { itemId: product.id, name: product.name, quantity: raw.quantity, modifiers, unitPriceCents, lineTotalCents: unitPriceCents * raw.quantity };
     });
     const subtotalCents = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
-    const taxCents = Math.floor((subtotalCents * taxBasisPoints + 5000) / 10000);
-    const quote = { items, subtotalCents, taxCents, totalCents: subtotalCents + taxCents };
-    const payload = JSON.stringify({ sessionId: pinned.session.id, fulfillment: input.fulfillment, items: normalized.sort() });
-    return { ...pinned, quote, payload };
+    const quote = { items, subtotalCents, ...adjustments(input, subtotalCents) };
+    const { discount, tipCents, note } = quote;
+    const payload = { sessionId: pinned.session.id, fulfillment: input.fulfillment, items: normalized.sort() };
+    // Preserve the fingerprint of checkout requests that predate adjustments.
+    if (discount !== 'none') payload.discount = discount;
+    if (tipCents) payload.tipCents = tipCents;
+    if (note) payload.note = note;
+    return { ...pinned, quote, payload, device: live.device(pinned.session.deviceId) };
   }
 
   function receipt(row) {
+    const sale = JSON.parse(row.receipt);
+    const refund = row.refund_id ? {
+      id: row.refund_id, amountCents: row.refund_amount, reason: row.refund_reason, createdAt: row.refund_created,
+    } : null;
     return {
-      ...JSON.parse(row.receipt), number: `F-${100 + row.sequence}`, status: row.status, updatedAt: row.updated_at,
+      discount: 'none', discountCents: 0, tipCents: 0, note: '', taxableSubtotalCents: sale.subtotalCents,
+      ...sale, number: `F-${100 + row.sequence}`, status: row.status, updatedAt: row.updated_at, refund,
     };
   }
 
   function order(input) {
     const key = input.idempotencyKey;
-    if (typeof key !== 'string' || !/^[a-z0-9:_-]{8,128}$/i.test(key)) throw new HttpError(422, 'A valid checkout retry key is required.');
-    const priced = price(input);
-    const { session: pinned, menu, quote } = priced;
+    if (!isRetryKey(key)) throw new HttpError(422, 'A valid checkout retry key is required.');
+    const { session: pinned, menu, quote, payload: normalized, device } = price(input);
     const tender = resolveTender(input.tender, quote.totalCents);
-    const payload = tender ? JSON.stringify({ ...JSON.parse(priced.payload), tender }) : priced.payload;
-    const device = live.device(pinned.deviceId);
+    const payload = JSON.stringify(tender ? { ...normalized, tender } : normalized);
+    let stockChanged = false;
     const result = store.transaction(() => {
-      const previous = store.get('SELECT * FROM orders WHERE idempotency_key = ?', key);
+      const previous = store.get(`${selectOrder} WHERE orders.idempotency_key = ?`, key);
       if (previous) {
         if (previous.payload !== payload) throw new HttpError(409, 'This checkout retry key was already used for a different order.');
         return { order: receipt(previous), duplicate: true };
       }
       if (pinned.orderId) throw new HttpError(409, 'This kiosk session already checked out.');
+      stockChanged = inventory.consume(device.storeId, quote.items);
       const createdAt = now();
       const id = randomUUID();
       const record = {
@@ -118,9 +153,37 @@ export function createOrders({ store, live, notify }) {
       };
       store.run('INSERT INTO orders(id, session_id, idempotency_key, payload, status, receipt, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
         id, pinned.id, key, payload, 'received', JSON.stringify(record), createdAt);
-      const saved = receipt(store.get('SELECT * FROM orders WHERE id = ?', id));
+      const saved = receipt(store.get(`${selectOrder} WHERE orders.id = ?`, id));
       store.audit('orders', 'Order received', `${saved.number} · ${device.storeName} · Menu v${menu.version}.`);
       return { order: saved, duplicate: false };
+    });
+    if (!result.duplicate) {
+      notify('orders');
+      if (stockChanged) notify('inventory');
+    }
+    return result;
+  }
+
+  function refund(id, input) {
+    if (!isUuid(id)) throw new HttpError(404, 'Order was not found.');
+    const key = input.idempotencyKey;
+    if (!isRetryKey(key)) throw new HttpError(422, 'A valid refund retry key is required.');
+    const reason = cleanText(input.reason, 160, 'Refund reason', true);
+    const result = store.transaction(() => {
+      const row = store.get(`${selectOrder} WHERE orders.id = ?`, id);
+      if (!row) throw new HttpError(404, 'Order was not found.');
+      const existing = store.get('SELECT order_id, reason FROM refund WHERE idempotency_key = ?', key);
+      if (existing) {
+        if (existing.order_id !== id || existing.reason !== reason) throw new HttpError(409, 'This refund key was already used for a different request.');
+        return { order: receipt(row), duplicate: true };
+      }
+      if (row.refund_id) throw new HttpError(409, 'This order already has a full refund.');
+      const saved = receipt(row);
+      const timestamp = now();
+      store.run('INSERT INTO refund VALUES (?, ?, ?, ?, ?, ?)', id, randomUUID(), key, saved.totalCents, reason, timestamp);
+      store.run('UPDATE orders SET updated_at = ? WHERE id = ?', timestamp, id);
+      store.audit('orders', 'Demo refund recorded', `${saved.number} · ${saved.storeName} · ${saved.totalCents} cents.`);
+      return { order: receipt(store.get(`${selectOrder} WHERE orders.id = ?`, id)), duplicate: false };
     });
     if (!result.duplicate) notify('orders');
     return result;
@@ -131,14 +194,15 @@ export function createOrders({ store, live, notify }) {
     if (!states.includes(status)) throw new HttpError(422, 'Choose a valid kitchen status.');
     let changed = false;
     const saved = store.transaction(() => {
-      const row = store.get('SELECT * FROM orders WHERE id = ?', id);
+      const row = store.get(`${selectOrder} WHERE orders.id = ?`, id);
       if (!row) throw new HttpError(404, 'Order was not found.');
       if (row.status === status) return receipt(row);
+      if (row.refund_id) throw new HttpError(409, 'This order has been refunded.');
       if (states.indexOf(status) !== states.indexOf(row.status) + 1) {
         throw new HttpError(409, `An order marked ${row.status} cannot move to ${status}.`);
       }
       store.run('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?', status, now(), id);
-      const updated = receipt(store.get('SELECT * FROM orders WHERE id = ?', id));
+      const updated = receipt(store.get(`${selectOrder} WHERE orders.id = ?`, id));
       store.audit('orders', 'Kitchen status updated', `${updated.number} · ${updated.storeName} · ${row.status} → ${status}.`);
       changed = true;
       return updated;
@@ -149,29 +213,48 @@ export function createOrders({ store, live, notify }) {
 
   function get(id, sessionId) {
     if (!isUuid(id) || !isUuid(sessionId)) throw new HttpError(404, 'Receipt was not found.');
-    const row = store.get('SELECT * FROM orders WHERE id = ? AND session_id = ?', id, sessionId);
+    const row = store.get(`${selectOrder} WHERE orders.id = ? AND session_id = ?`, id, sessionId);
     if (!row) throw new HttpError(404, 'Receipt was not found.');
     return receipt(row);
   }
 
   function list() {
-    const active = store.all("SELECT * FROM orders WHERE status <> 'completed' ORDER BY sequence DESC");
-    const recent = store.all("SELECT * FROM orders WHERE status = 'completed' ORDER BY sequence DESC LIMIT 100");
-    const counts = Object.fromEntries(states.map(state => [state, 0]));
-    for (const row of store.all('SELECT status, count(*) AS count FROM orders GROUP BY status')) counts[row.status] = row.count;
+    const active = store.all(`${selectOrder} WHERE status <> 'completed' AND refund.id IS NULL ORDER BY sequence DESC`);
+    const recent = store.all(`${selectOrder} WHERE status = 'completed' OR refund.id IS NOT NULL ORDER BY sequence DESC LIMIT 100`);
+    const counts = Object.fromEntries([...states, 'refunded'].map(state => [state, 0]));
+    for (const row of store.all(`
+      SELECT CASE WHEN refund.id IS NULL THEN orders.status ELSE 'refunded' END AS bucket, count(*) AS count
+      FROM orders LEFT JOIN refund ON orders.id = refund.order_id GROUP BY bucket
+    `)) counts[row.bucket] = row.count;
     return { orders: [...active, ...recent].map(receipt), counts };
   }
 
+  function recent(deviceId, requestedLimit) {
+    if (!live.device(deviceId)) throw new HttpError(422, 'Choose a registered kiosk.');
+    const limit = requestedLimit === null ? 12 : Number(requestedLimit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new HttpError(422, 'Choose between 1 and 50 recent receipts.');
+    const rows = store.all(`${selectOrder} JOIN session ON orders.session_id = session.id
+      WHERE session.device_id = ? ORDER BY sequence DESC LIMIT ?`, deviceId, limit);
+    return { orders: rows.map(receipt) };
+  }
+
   function pickup(storeId) {
-    if (!storeIds.has(storeId)) throw new HttpError(422, 'Choose a FOLD store.');
+    if (!locations.has(storeId)) throw new HttpError(422, 'Choose a FOLD store.');
     const rows = store.all(`
       SELECT sequence, status FROM orders
       WHERE status IN ('received', 'preparing', 'ready')
+        AND NOT EXISTS (SELECT 1 FROM refund WHERE refund.order_id = orders.id)
         AND json_extract(receipt, '$.storeId') = ?
         AND json_extract(receipt, '$.version') = 2
       ORDER BY sequence ASC`, storeId);
     return { storeId, orders: rows.map(row => ({ number: `F-${100 + row.sequence}`, status: row.status })) };
   }
 
-  return { openSession, session, quote: input => price(input).quote, order, update, get, list, pickup };
+  function quote(input) {
+    const priced = price(input);
+    inventory.check(priced.device.storeId, priced.quote.items);
+    return priced.quote;
+  }
+
+  return { openSession, session, quote, order, refund, update, get, list, pickup, recent, inventory };
 }

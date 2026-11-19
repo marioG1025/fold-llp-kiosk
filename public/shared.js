@@ -43,6 +43,7 @@ const Fold = (() => {
     if (!response.ok) {
       const error = new Error(data.error || "Something went wrong. Please try again.");
       error.status = response.status;
+      error.code = data.code;
       throw error;
     }
     return data;

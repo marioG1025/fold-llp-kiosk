@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#29221c">
+  <title>Fold Coffee &amp; Patisserie — Kitchen</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/kitchen.css">
+  <script defer src="/shared.js"></script>
+  <script defer src="/kitchen.js"></script>
+</head>
+<body class="kitchen">
+  <a class="skip" href="#kitchen-board">Skip to kitchen tickets</a>
+  <header class="kds-header">
+    <div class="kds-identity">
+      <a class="brand" href="/register" aria-label="Fold register"><span class="brand-name">fold<span>.</span></span></a>
+      <h1>Kitchen</h1>
+    </div>
+    <div class="kds-tools">
+      <p id="kds-connection" class="status-pill" role="status">Connecting</p>
+      <a href="/ops#orders">Operations</a>
+      <a href="/pickup">Pickup</a>
+    </div>
+  </header>
+  <main class="kds-layout">
+    <div class="kds-controls">
+      <label>Store<select id="kds-store" class="select"><option value="all">All stores</option></select></label>
+      <label>Station<select id="kds-station" class="select">
+        <option value="all">All stations</option>
+        <option value="drinks">Drinks</option>
+        <option value="bakes">Patisserie</option>
+        <option value="food">Kitchen</option>
+      </select></label>
+      <button class="button" id="kds-overdue" type="button" aria-pressed="false">Overdue only</button>
+      <p id="kds-summary"></p>
+      <p class="kds-shortcuts"><kbd>←</kbd> <kbd>→</kbd> Select <kbd>B</kbd> Bump</p>
+    </div>
+    <div class="notice" id="kds-notice" role="status" hidden></div>
+    <div class="kds-board" id="kitchen-board" aria-busy="true"></div>
+    <p class="sr-only" id="kds-live" role="status"></p>
+  </main>
+</body>
+</html>

@@ -11,10 +11,10 @@
   const labels = {
     all: "All devices", stable: "Stable", beta: "Beta",
     live: "Acknowledged", pending: "Awaiting ACK", offline: "Offline", rejected: "Rejected",
-    received: "Received", preparing: "Preparing", ready: "Ready", completed: "Completed"
+    received: "Received", preparing: "Preparing", ready: "Ready", completed: "Completed", refunded: "Refunded"
   };
   const advance = { received: ["preparing", "Start preparing"], preparing: ["ready", "Mark ready"], ready: ["completed", "Complete order"] };
-  const tabs = new Set(["rollout", "devices", "orders"]);
+  const tabs = new Set(["rollout", "devices", "orders", "stock", "reports"]);
   let active = tabs.has(location.hash.slice(1)) ? location.hash.slice(1) : "rollout";
   let fleet = null;
   let orders = [];
@@ -27,6 +27,7 @@
   let fleetRequest = 0;
   let orderRequest = 0;
   let dialogTrigger = null;
+  const refundAttempts = new Map();
   const draft = { version: "2", channel: "beta", percentage: 100, deviceId: "" };
 
   const label = (id) => labels[id] || String(id || "Unknown");
@@ -105,10 +106,11 @@
     });
     tabs.forEach((name) => { node(name).hidden = name !== active; });
     renderActive(true);
+    document.dispatchEvent(new CustomEvent("fold-ops-tab", { detail: active }));
     if (active === "orders") {
       if (!ordersLoaded) node("orders").innerHTML = '<p class="loading">Loading the order queue…</p>';
       refreshOrders();
-    } else if (!fleet) {
+    } else if (!fleet && ["rollout", "devices"].includes(active)) {
       node(active).innerHTML = '<p class="loading">Loading the kiosk fleet…</p>';
     }
   }
@@ -246,14 +248,16 @@
     const activeControl = document.activeElement;
     const restore = activeControl.closest?.("[data-advance], [data-order-detail]");
     const locations = [...new Set([...(fleet?.devices || []).map((device) => device.storeName), ...orders.map((order) => order.storeName)])].sort();
-    const visible = orders.filter((order) =>
-      (orderFilter === "all" || (orderFilter === "active" ? order.status !== "completed" : order.status === orderFilter)) &&
-      (locationFilter === "all" || order.storeName === locationFilter));
+    const visible = orders.filter((order) => {
+      const status = order.refund ? "refunded" : order.status;
+      return (orderFilter === "all" || (orderFilter === "active" ? !["completed", "refunded"].includes(status) : status === orderFilter)) &&
+        (locationFilter === "all" || order.storeName === locationFilter);
+    });
     if (!node("order-results")) {
       element.innerHTML = `<section class="panel">
       <div class="ops-toolbar"><div><h2>Pickup queue</h2><p class="panel-intro" id="order-count"></p></div>
         <div class="fields">
-          <label class="field">Status<select class="select" data-order-filter>${[["active", "Active"], ["all", "All statuses"], ["received", "Received"], ["preparing", "Preparing"], ["ready", "Ready"], ["completed", "Completed"]].map(([id, name]) => option(id, name, orderFilter)).join("")}</select></label>
+          <label class="field">Status<select class="select" data-order-filter>${[["active", "Active"], ["all", "All statuses"], ["received", "Received"], ["preparing", "Preparing"], ["ready", "Ready"], ["completed", "Completed"], ["refunded", "Refunded"]].map(([id, name]) => option(id, name, orderFilter)).join("")}</select></label>
           <label class="field">Store<select class="select" data-location-filter></select></label>
         </div>
       </div><div id="order-results"></div>
@@ -273,10 +277,10 @@
           <td><strong>${escape(order.number)}</strong><small>${escape(time(order.createdAt, timeShort))}</small></td>
           <td>${escape(order.storeName)}<br><small>Menu ${escape(versions(order.version))} · ${order.fulfillment === "to-go" ? "To go" : "For here"}</small></td>
           <td>${order.items.reduce((sum, line) => sum + line.quantity, 0)}</td>
-          <td>${badge(label(order.status), order.status === "ready" || order.status === "completed" ? "good" : "")}</td>
+          <td>${order.refund ? badge("Refunded", "warn") : badge(label(order.status), order.status === "ready" || order.status === "completed" ? "good" : "")}</td>
           <td>${money(order.totalCents)}</td>
           <td><div class="table-actions"><button class="button" type="button" data-order-detail="${escape(order.id)}" aria-label="View order ${escape(order.number)}">Details</button>
-          ${advance[order.status] ? `<button class="button primary" type="button" data-advance="${escape(order.id)}" ${pending ? "disabled" : ""}>${advance[order.status][1]}</button>` : ""}</div></td>
+          ${!order.refund && advance[order.status] ? `<button class="button primary" type="button" data-advance="${escape(order.id)}" ${pending ? "disabled" : ""}>${advance[order.status][1]}</button>` : ""}</div></td>
         </tr>`).join("")}</tbody></table></div>` :
       '<div class="empty-state"><strong>No orders in this view</strong><p>New kiosk orders will appear here automatically.</p></div>';
     if (results.dataset.markup === markup) return;
@@ -367,21 +371,102 @@
     const tender = order.tender?.method === 'cash'
       ? `<div class="total"><span>Cash received</span><span>${money(order.tender.receivedCents)}</span></div><div class="total"><span>Change</span><strong>${money(order.tender.changeCents)}</strong></div>`
       : order.tender?.method === 'card-demo' ? '<div class="total"><span>Tender</span><span>Demo card</span></div>' : '';
+    const adjustments = [
+      order.discountCents > 0 ? `<div class="total"><span>Discount</span><span>−${money(order.discountCents)}</span></div>` : "",
+      order.tipCents > 0 ? `<div class="total"><span>Tip</span><span>${money(order.tipCents)}</span></div>` : ""
+    ].join("");
+    const refund = order.refund
+      ? `<div class="refund-block"><strong>Refunded ${money(order.refund.amountCents)}</strong><p>${escape(order.refund.reason)}</p><p>${escape(time(order.refund.createdAt))}</p></div>`
+      : `<button type="button" class="button refund-trigger" data-refund="${escape(order.id)}">Record full refund</button>`;
     openDialog(`${closeButton()}<div class="dialog-body">
       <p class="eyebrow muted">${escape(order.storeName)} · MENU ${escape(versions(order.version).toUpperCase())}</p>${title("Order " + order.number)}
-      <p class="dialog-description">${escape(label(order.status))} · ${order.fulfillment === "to-go" ? "To go" : "For here"} · ${escape(time(order.createdAt))}</p>
+      <p class="dialog-description">${escape(label(order.refund ? "refunded" : order.status))} · ${order.fulfillment === "to-go" ? "To go" : "For here"} · ${escape(time(order.createdAt))}</p>
+      ${order.note ? `<p class="notice">Ticket note · ${escape(order.note)}</p>` : ""}
       <ul class="checkout-lines">${order.items.map((item) => `<li><div><strong>${item.quantity} × ${escape(item.name)}</strong>
       ${item.modifiers?.length ? `<small>${escape(item.modifiers.map((modifier) => modifier.name).join(" · "))}</small>` : ""}</div><strong>${money(item.lineTotalCents)}</strong></li>`).join("")}</ul>
       <div class="quote-breakdown"><div class="total"><span>Subtotal</span><span>${money(order.subtotalCents)}</span></div>
-      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div><div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div>${tender}</div>
+      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div>${adjustments}<div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div>${tender}</div>
       <div class="receipt-pickup"><strong>${escape(order.pickup?.title)}</strong><p>${escape(order.pickup?.description)}</p></div>
-      </div>`, trigger);
+      ${refund}</div>`, trigger);
+  }
+
+  function reviewRefund(order) {
+    if (!order || order.refund) return;
+    const previous = refundAttempts.get(order.id);
+    openDialog(`${closeButton()}<div class="dialog-body">${title("Refund order " + order.number)}
+      <p class="dialog-description">Record a full demo refund of ${money(order.totalCents)}. This stops fulfillment for the ticket.</p>
+      <form id="refund-form" class="refund-form" data-order="${escape(order.id)}">
+        <label class="field">Reason<textarea name="reason" maxlength="160" rows="3" required ${previous ? "readonly" : ""}>${escape(previous?.reason || "")}</textarea></label>
+        <p class="notice error" id="refund-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button type="button" class="button" data-refund-back="${escape(order.id)}">Back</button>
+          <button type="submit" class="button primary">${previous ? "Check or retry refund" : "Record demo refund"}</button></div>
+      </form></div>`, dialogTrigger);
+    (previous ? node("refund-form").querySelector("[type=submit]") : node("refund-form").elements.reason).focus();
+  }
+
+  async function recordRefund(form) {
+    if (validating) return;
+    const order = orders.find((entry) => entry.id === form.dataset.order);
+    const reason = form.elements.reason.value.trim();
+    if (!order) return;
+    if (order.refund) {
+      refundAttempts.delete(order.id);
+      viewOrder(order, dialogTrigger);
+      dialog.querySelector("[data-close]").focus();
+      return;
+    }
+    if (!reason) {
+      showNotice(node("refund-error"), "Enter a reason for the refund.", "error");
+      form.elements.reason.focus();
+      return;
+    }
+    if (!refundAttempts.has(order.id)) {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || "fold-refund-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+      refundAttempts.set(order.id, { reason, idempotencyKey });
+    }
+    const button = form.querySelector("[type=submit]");
+    validating = true;
+    form.elements.reason.readOnly = true;
+    button.disabled = true;
+    button.textContent = "Recording…";
+    showNotice(node("refund-error"), "");
+    try {
+      const result = await api("/api/orders/" + encodeURIComponent(order.id) + "/refund", refundAttempts.get(order.id));
+      orderRequest += 1;
+      orders = orders.map((entry) => entry.id === order.id ? result.order : entry);
+      refundAttempts.delete(order.id);
+      renderOrders();
+      viewOrder(result.order, dialogTrigger);
+      dialog.querySelector("[data-close]").focus();
+      showNotice(notice, `Full demo refund recorded for ${order.number}.`, "success");
+    } catch (error) {
+      if (error.status >= 400 && error.status < 500 && ![408, 409, 429].includes(error.status)) {
+        refundAttempts.delete(order.id);
+        form.elements.reason.readOnly = false;
+      }
+      if (error.status === 409) {
+        await refreshOrders();
+        const refreshed = orders.find((entry) => entry.id === order.id);
+        if (refreshed?.refund) {
+          refundAttempts.delete(order.id);
+          viewOrder(refreshed, dialogTrigger);
+          dialog.querySelector("[data-close]").focus();
+          return;
+        }
+      }
+      showNotice(node("refund-error"), error.message, "error");
+      button.disabled = false;
+      button.textContent = refundAttempts.has(order.id) ? "Check or retry refund" : "Record demo refund";
+      button.focus();
+    } finally {
+      validating = false;
+    }
   }
 
   async function advanceOrder(button) {
     if (pending) return;
     const order = orders.find((entry) => entry.id === button.dataset.advance);
-    if (!order || !advance[order.status]) return;
+    if (!order || order.refund || !advance[order.status]) return;
     pending = true;
     button.disabled = true;
     try {
@@ -434,6 +519,11 @@
     updateTarget();
   });
   document.addEventListener("submit", (event) => {
+    if (event.target.matches("#refund-form")) {
+      event.preventDefault();
+      recordRefund(event.target);
+      return;
+    }
     if (!event.target.matches("#rollout-form")) return;
     event.preventDefault();
     reviewRollout(event.submitter);
@@ -442,6 +532,8 @@
     const button = event.target.closest("button");
     if (!button) return;
     if (button.hasAttribute("data-close") && !validating) dialog.close();
+    if (button.dataset.refund && !validating) reviewRefund(orders.find((order) => order.id === button.dataset.refund));
+    if (button.dataset.refundBack && !validating) viewOrder(orders.find((order) => order.id === button.dataset.refundBack), dialogTrigger);
     if (button.dataset.useRelease) {
       draft.version = button.dataset.useRelease;
       dialogTrigger = null;
@@ -455,6 +547,7 @@
   dialog.addEventListener("close", () => {
     previewRequest += 1;
     if (dialogTrigger?.isConnected) dialogTrigger.focus({ preventScroll: true });
+    else if (active === "orders") node("orders").querySelector("[data-order-filter]")?.focus({ preventScroll: true });
     dialogTrigger = null;
   });
   addEventListener("hashchange", () => setTab(location.hash.slice(1), false));
@@ -466,6 +559,7 @@
     events.addEventListener("message", (event) => {
       try {
         const { type } = JSON.parse(event.data);
+        document.dispatchEvent(new CustomEvent("fold-ops-update", { detail: type }));
         if (type === "fleet") refreshFleet();
         if (type === "orders" && active === "orders") refreshOrders();
       } catch { /* Ignore events from other protocol versions. */ }

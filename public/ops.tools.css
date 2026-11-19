@@ -1,0 +1,24 @@
+.ops-nav { flex-wrap: wrap; }
+.ops-tools-heading { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 20px; justify-content: space-between; margin-bottom: 14px; }
+.ops-tools-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.ops-tools-filters .field { flex: 1 1 125px; min-width: min(100%, 125px); }
+.ops-tools-filters .button { min-height: 43px; white-space: nowrap; }
+.ops-tools-filters select, .ops-tools-filters input { min-width: 0; }
+.stock-limit { display: flex; align-items: center; gap: 6px; }
+.stock-limit input { width: 78px; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 6px; background: var(--white); }
+.stock-table .button { min-height: 42px; }
+.stock-caption { color: var(--muted); margin: 8px 0 12px; font-size: .83rem; }
+.report-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(142px, 100%), 1fr)); gap: 9px; margin: 13px 0 20px; }
+.report-summary div { border: 1px solid var(--line); padding: 11px; border-radius: 8px; background: var(--sand); }
+.report-summary strong { display: block; font-variant-numeric: tabular-nums; margin-top: 4px; font-size: 1.16rem; }
+.report-summary small { color: var(--muted); }
+.report-group + .report-group { margin-top: 17px; }
+.report-group h3 { margin-bottom: 7px; }
+.refund-block { border: 1px solid #c3917a; background: #fbecdf; border-radius: 9px; padding: 10px; margin-top: 12px; }
+.refund-block p { margin-top: 5px; font-size: .84rem; overflow-wrap: anywhere; }
+.refund-trigger { margin-top: 14px; }
+.refund-form { margin-top: 14px; }
+.refund-form textarea { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); color: var(--ink); font: inherit; resize: vertical; }
+@media (max-width: 480px) {
+  .ops-tools-filters { width: 100%; }
+}

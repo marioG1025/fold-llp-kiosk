@@ -1,0 +1,744 @@
+[
+  {
+    "id": "register",
+    "name": "Cashier register",
+    "changes": [
+      {
+        "number": 1,
+        "description": "Park and continue. Put the open ticket on hold with a staff-entered label or the first product as a fallback, then open a fresh sale.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 2,
+        "description": "Per-register parking storage. Parked tickets survive a page reload or browser restart on the same browser profile and stay scoped to the selected register.",
+        "evidence": [
+          "public/register-workflow.js"
+        ]
+      },
+      {
+        "number": 3,
+        "description": "Visible parked count. The ticket toolbar exposes the current count and responds to parking changes made from another tab in the same browser.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 4,
+        "description": "Version-pinned recall. Reopening a hold verifies the original server session, terminal and menu version, then restores its lines, fulfillment and adjustments.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 5,
+        "description": "Active-ticket protection. Recall remains disabled while another ticket has items. Staff can park or finish the current ticket before recalling a hold.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 6,
+        "description": "Confirmed discard. Staff can remove a named hold through an explicit confirmation without changing the open ticket.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 7,
+        "description": "Register sales history. Recent sales show the number, amount, timestamp, tender, menu version and refund status for this register.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 8,
+        "description": "Historical receipt and reprint. Open and print a recent receipt while keeping the current register ticket in place.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 9,
+        "description": "Staff note. Add a 240-character internal note with a live character count and preserve it through refresh, parking and sale submission.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 10,
+        "description": "Discount presets. Apply or remove a 10% staff discount or 15% service recovery discount against the server quote.",
+        "evidence": [
+          "public/register-workflow.js"
+        ]
+      },
+      {
+        "number": 11,
+        "description": "Tip quick amounts. Set no tip, $1, $2 or $5 in the adjustment dialog.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 12,
+        "description": "Custom tip. Enter a tip of up to $50 in whole cents with inline validation before applying it.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 13,
+        "description": "Itemized adjustment totals. Display authoritative discount, tax, tip and grand total in the ticket, adjusted payment review and printed receipt.,",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 14,
+        "description": "Live sold-out controls. Store-specific inventory updates disable unavailable catalogue and quick keys without a reload.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 15,
+        "description": "Remaining quantities. Limited-stock keys show the units left after accounting for this ticket. Quantity controls prevent adding past that limit.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 16,
+        "description": "Recoverable stock rejection. If stock changes before payment, the register refreshes availability, keeps the ticket and returns staff to editing.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 17,
+        "description": "Editable quick keys. Assign four distinct products to terminal-specific shortcuts that persist in the browser.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 18,
+        "description": "Cashier keyboard guide. A visible shortcuts panel explains keyboard navigation, including F6 for parking, F7 for recall, F8 for recent sales and F9 for adjustments.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 19,
+        "description": "One-action search reset. The reset button or Escape clears the query and category together and returns focus to search.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 20,
+        "description": "Keyboard product navigation. Arrow keys move between category buttons and within the product grid, skipping unavailable items. Arrow Down from search focuses the first available product.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 21,
+        "description": "Fixed desktop payment area. The product grid and ticket lines scroll independently at workstation sizes so payment remains in view.",
+        "evidence": [
+          "public/register.css"
+        ]
+      },
+      {
+        "number": 22,
+        "description": "Larger touch targets. Category, service, parking, quantity and cash controls meet a 44px target height, with 44×44px quantity buttons.",
+        "evidence": [
+          "public/register.css"
+        ]
+      },
+      {
+        "number": 23,
+        "description": "Add cash bills. Add $1, $5, $10 or $20 to the received amount and calculate change as bills are counted.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 24,
+        "description": "Last-used tender. Start the next sale with the last successfully recorded payment method for that register in the same tab.",
+        "evidence": [
+          "public/register.js"
+        ]
+      },
+      {
+        "number": 25,
+        "description": "Live customer counter. Open the display for this register and broadcast ticket, payment, completion and idle states with no staff notes or transaction IDs.,,",
+        "evidence": [
+          "public/register.html",
+          "public/register.js",
+          "public/register-workflow.js"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "backend",
+    "name": "Orders, inventory and accounting",
+    "changes": [
+      {
+        "number": 26,
+        "description": "Terminals can fetch the canonical tender limits, note limit, tax rate, and discount menu through the POS policy endpoint.",
+        "evidence": [
+          "server.mjs",
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 27,
+        "description": "A cashier can apply approved 10% staff or 15% service-recovery discounts. The server computes the amount from the selected preset.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 28,
+        "description": "A discount reduces the taxable subtotal. The receipt exposes the adjusted base and rounds the resulting tax in whole cents.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 29,
+        "description": "Cashiers can add a tip after tax. The server validates the entered cents and caps tips at $50.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 30,
+        "description": "Cashiers can attach a staff note. The API cleans line endings, trims whitespace, and checks length and control characters.",
+        "evidence": [
+          "validation.mjs",
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 31,
+        "description": "Cash tender enforces an upper limit in addition to checking that the amount covers the sale. Cash change reflects the final discounted and tipped total.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 32,
+        "description": "The saved receipt retains the applied adjustment amounts, note, tender, store, and signed menu version for later reads.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 33,
+        "description": "Sale retries include normalized adjustments in their request identity. Earlier unadjusted receipts can still be read and retried with their original idempotency keys.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 34,
+        "description": "A terminal can load its own recent receipts from the ledger, with a bounded result limit.",
+        "evidence": [
+          "server.mjs",
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 35,
+        "description": "Registers and operations can query availability overrides for a specific store. Other storefronts keep their own stock.",
+        "evidence": [
+          "inventory.mjs",
+          "store.mjs"
+        ]
+      },
+      {
+        "number": 36,
+        "description": "Staff can mark an item out of stock even when it normally has unlimited availability.",
+        "evidence": [
+          "inventory.mjs"
+        ]
+      },
+      {
+        "number": 37,
+        "description": "Staff can set a finite count or reset an item to unlimited availability.",
+        "evidence": [
+          "inventory.mjs"
+        ]
+      },
+      {
+        "number": 38,
+        "description": "Consuming the last counted unit makes the item unavailable automatically.",
+        "evidence": [
+          "inventory.mjs"
+        ]
+      },
+      {
+        "number": 39,
+        "description": "Quotes flag unavailable items before tender and identify the SKU, store, and remaining count.",
+        "evidence": [
+          "inventory.mjs",
+          "server.mjs"
+        ]
+      },
+      {
+        "number": 40,
+        "description": "Stock validation counts the same SKU across differently customized lines.",
+        "evidence": [
+          "inventory.mjs"
+        ]
+      },
+      {
+        "number": 41,
+        "description": "Checkout commits stock consumption and the receipt in one transaction. Retrying a successful sale leaves stock untouched.",
+        "evidence": [
+          "orders.mjs",
+          "inventory.mjs"
+        ]
+      },
+      {
+        "number": 42,
+        "description": "Connected views receive an inventory event when staff changes an override or a sale consumes counted stock.",
+        "evidence": [
+          "inventory.mjs",
+          "server.mjs",
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 43,
+        "description": "The audit trail identifies manual stock changes and stock exhaustion by store and item.",
+        "evidence": [
+          "inventory.mjs",
+          "store.mjs"
+        ]
+      },
+      {
+        "number": 44,
+        "description": "Operations can record a full demo refund against the original charged amount. The original tender and receipt remain available alongside the refund record.",
+        "evidence": [
+          "orders.mjs",
+          "store.mjs"
+        ]
+      },
+      {
+        "number": 45,
+        "description": "The refund ledger enforces one refund per sale and a unique operation key. An exact retry returns the original refund.",
+        "evidence": [
+          "orders.mjs",
+          "store.mjs"
+        ]
+      },
+      {
+        "number": 46,
+        "description": "Refunds require a bounded staff reason and record an audit event with the order number, store, and amount.",
+        "evidence": [
+          "orders.mjs",
+          "validation.mjs"
+        ]
+      },
+      {
+        "number": 47,
+        "description": "Refunded orders move out of active kitchen and pickup work, show separately in order counts, and cannot advance in the kitchen.",
+        "evidence": [
+          "orders.mjs"
+        ]
+      },
+      {
+        "number": 48,
+        "description": "Sales reports filter by storefront and inclusive UTC dates. A later refund counts in the period when it was posted.",
+        "evidence": [
+          "reports.mjs"
+        ]
+      },
+      {
+        "number": 49,
+        "description": "Sales reports reconcile gross item sales, discounts, taxes, tips, charges, refunds, and net receipts by storefront, day, and overall.",
+        "evidence": [
+          "reports.mjs"
+        ]
+      },
+      {
+        "number": 50,
+        "description": "The same filtered report can be downloaded as CSV for reconciliation. The export contains aggregate amounts and excludes staff notes and refund reasons.",
+        "evidence": [
+          "server.mjs",
+          "reports.mjs"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "operations",
+    "name": "Kitchen, operations and pickup",
+    "changes": [
+      {
+        "number": 51,
+        "description": "The kitchen workboard separates New, Preparing, and Ready tickets and shows the count in each lane.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 52,
+        "description": "A store selector limits the board to one location and saves that selection in the URL.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 53,
+        "description": "Drinks, Patisserie, and Kitchen station filters route tickets using the item’s menu category and highlight the matching quantities.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 54,
+        "description": "Mixed-station tickets retain their other items and identify when a station’s bump action affects the whole ticket.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 55,
+        "description": "Each ticket shows a live elapsed clock. Ready tickets show time since they were marked Ready.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 56,
+        "description": "Waiting tickets at eight minutes or more receive an overdue label and contribute to the overdue count.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 57,
+        "description": "Overdue only narrows the screen to delayed work and preserves the choice in the URL.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 58,
+        "description": "Kitchen cards expose line quantities, selected modifiers, service type, store, and the total number of items.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 59,
+        "description": "Cashier ticket notes appear separately above the prep lines.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 60,
+        "description": "A large action on each card starts prep, marks the order Ready, or records handoff. A pending action cannot submit again.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 61,
+        "description": "Left and right arrows select a ticket and B bumps it. The selected ticket has a visible outline and keyboard focus follows it when possible.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 62,
+        "description": "Long item and modifier lists scroll inside the card, with the bump control outside that scroll area. Larger wall displays fit two cards per lane.",
+        "evidence": [
+          "public/kitchen.css"
+        ]
+      },
+      {
+        "number": 63,
+        "description": "The board receives live order changes, polls as a fallback, and disables bump controls while its order feed is offline.",
+        "evidence": [
+          "public/kitchen.js"
+        ]
+      },
+      {
+        "number": 64,
+        "description": "Availability opens a separate stock view for each store and displays its current state.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 65,
+        "description": "Stock can be searched by product or category and narrowed to unavailable items or limited quantities.",
+        "evidence": [
+          "public/ops.html",
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 66,
+        "description": "Staff can mark a product unavailable and restore it. The view distinguishes staff blocks from exhausted stock.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 67,
+        "description": "Staff can set a finite stock quantity, see the remaining count, or clear the quantity for unlimited stock.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 68,
+        "description": "A full demo refund requires confirmation and a reason. Uncertain responses can be retried using the original request key.",
+        "evidence": [
+          "public/ops.js"
+        ]
+      },
+      {
+        "number": 69,
+        "description": "Refunded sales have a dedicated order filter and display the amount, reason, and recorded time. They cannot be advanced from the queue.",
+        "evidence": [
+          "public/ops.js"
+        ]
+      },
+      {
+        "number": 70,
+        "description": "Sales totals can be filtered by store and inclusive UTC dates, with charges, discounts, taxes, tips, refunds, and net collections displayed.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 71,
+        "description": "The sales screen breaks the filtered figures down by store and calendar day.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 72,
+        "description": "The download button exports CSV with the same filters as the displayed report.",
+        "evidence": [
+          "public/ops.tools.js"
+        ]
+      },
+      {
+        "number": 73,
+        "description": "The public pickup display can enter and exit full screen from its toolbar.",
+        "evidence": [
+          "public/pickup.js"
+        ]
+      },
+      {
+        "number": 74,
+        "description": "On supported devices, the pickup attendant can keep the screen awake. The display reacquires the lock when visible again and reports when the lock is unavailable.",
+        "evidence": [
+          "public/pickup.js"
+        ]
+      },
+      {
+        "number": 75,
+        "description": "Pickup numbers newly moved to Ready receive a one-minute highlight and a screen-reader announcement.",
+        "evidence": [
+          "public/pickup.js"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "counter",
+    "name": "Counter display, terminal lab and sales",
+    "changes": [
+      {
+        "number": 76,
+        "description": "Dedicated customer display separates the customer view from staff controls.",
+        "evidence": [
+          "public/counter.html"
+        ]
+      },
+      {
+        "number": 77,
+        "description": "Register chooser pairs the counter display with a specific simulated terminal.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 78,
+        "description": "Register pairing persists in a shareable device URL and falls back to a valid terminal.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 79,
+        "description": "The display requests a current ticket on opening, so a screen can join a sale in progress.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 80,
+        "description": "Welcome, active ticket, payment and receipt states give the customer phase-specific instructions.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 81,
+        "description": "The buyer can verify line quantities, modifier names, line prices and service type while the cashier edits.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 82,
+        "description": "A transaction breakdown separates discounts, tax, tips and the total and marks a pending quote.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 83,
+        "description": "At checkout, the customer display shows the pickup number and the versioned pickup instructions.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 84,
+        "description": "The display clears stale ticket content if the register stops responding, then tries to reconnect.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 85,
+        "description": "The display projects only bounded customer-visible values and uses text rendering for live fields.",
+        "evidence": [
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 86,
+        "description": "Optional fullscreen keeps the facing screen usable as a dedicated counter appliance.",
+        "evidence": [
+          "public/counter.html"
+        ]
+      },
+      {
+        "number": 87,
+        "description": "High-contrast responsive counter typography and de-duplicated live announcements support at-a-glance and assistive reading.",
+        "evidence": [
+          "public/counter.css",
+          "public/counter.js"
+        ]
+      },
+      {
+        "number": 88,
+        "description": "Terminal Lab offers documented seller, customer, compact and scaled browser profiles.",
+        "evidence": [
+          "public/terminal-lab.html"
+        ]
+      },
+      {
+        "number": 89,
+        "description": "Custom dimensions and rotation test layouts beyond the built-in profiles.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 90,
+        "description": "The same preview can load the register, customer screen, kitchen board, kiosk, pickup, operations or sales surface.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 91,
+        "description": "Fit-to-window preview retains the embedded page's actual CSS layout dimensions.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 92,
+        "description": "Diagnostics measure horizontal overflow using the embedded document.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 93,
+        "description": "The preview measures primary register touch targets against 44 CSS pixels and identifies undersized controls.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 94,
+        "description": "Diagnostics export a JSON snapshot suitable for comparing builds and viewport regressions.",
+        "evidence": [
+          "public/terminal-lab.js"
+        ]
+      },
+      {
+        "number": 95,
+        "description": "Sales report filters by store and supports today, recent periods and a custom UTC range.",
+        "evidence": [
+          "public/sales.js"
+        ]
+      },
+      {
+        "number": 96,
+        "description": "Opened report date ranges and store filters can be shared as URLs.",
+        "evidence": [
+          "public/sales.js"
+        ]
+      },
+      {
+        "number": 97,
+        "description": "The report breaks down gross, discounts, tax, tips, money collected, refunds and net collections.",
+        "evidence": [
+          "public/sales.js"
+        ]
+      },
+      {
+        "number": 98,
+        "description": "A daily trend chart and detailed daily table expose the timing of sales and later refunds.",
+        "evidence": [
+          "public/sales.js"
+        ]
+      },
+      {
+        "number": 99,
+        "description": "The store reconciliation table compares collected, refunded and net amounts across locations.",
+        "evidence": [
+          "public/sales.js"
+        ]
+      },
+      {
+        "number": 100,
+        "description": "The selected report can be downloaded as CSV or printed with the input controls removed.",
+        "evidence": [
+          "public/sales.js",
+          "public/sales.css"
+        ]
+      }
+    ]
+  }
+]

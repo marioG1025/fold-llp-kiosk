@@ -10,10 +10,12 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/register.css">
   <script defer src="/shared.js"></script>
+  <script defer src="/register-workflow.js"></script>
   <script defer src="/register.js"></script>
 </head>
 <body class="register">
   <a class="skip" href="#register-menu">Skip to register menu</a>
+  <a class="skip reg-skip-ticket" href="#reg-ticket">Skip to ticket</a>
   <header class="reg-header">
     <div class="reg-topbar">
       <div class="reg-identity">
@@ -27,6 +29,7 @@
           <label class="sr-only" for="reg-device">Register location</label>
           <select class="select" id="reg-device" disabled><option>Connecting…</option></select>
         </div>
+        <a class="reg-ops-link reg-counter-link" href="/counter" id="reg-counter" target="_blank" rel="noopener" aria-label="Open customer display in a new tab"><span data-icon="screen"></span><span class="reg-ops-text">Customer display</span></a>
         <a class="reg-ops-link" href="/ops" aria-label="Operations"><span data-icon="sliders"></span><span class="reg-ops-text">Operations</span></a>
       </div>
     </div>
@@ -50,9 +53,11 @@
           <input type="search" id="reg-search" autocomplete="off" placeholder="Search menu items" aria-label="Search menu items" aria-keyshortcuts="F2" disabled>
           <kbd>F2</kbd>
         </label>
+        <button class="button" type="button" id="reg-clear-search" hidden>Reset search</button>
+        <button class="button reg-shortcut-button" type="button" id="reg-shortcuts" aria-keyshortcuts="F1">Shortcuts</button>
       </div>
       <section class="reg-quick" aria-labelledby="reg-quick-title">
-        <h2 id="reg-quick-title">Quick keys</h2>
+        <div class="reg-key-header"><h2 id="reg-quick-title">Quick keys</h2><button type="button" id="reg-edit-keys" class="reg-text-button" disabled>Edit quick keys</button></div>
         <div class="reg-quick-grid" id="reg-quick"></div>
       </section>
       <section class="reg-keys" aria-labelledby="reg-keys-title">
@@ -75,10 +80,18 @@
         <button type="button" data-service="here" aria-pressed="true"><span data-icon="cup"></span>For here</button>
         <button type="button" data-service="to-go" aria-pressed="false"><span data-icon="bag"></span>To go</button>
       </div>
+      <div class="reg-ticket-tools">
+        <button class="button" type="button" id="reg-park" aria-keyshortcuts="F6" disabled>Park</button>
+        <button class="button" type="button" id="reg-held" aria-keyshortcuts="F7">Parked <span id="reg-held-count">0</span></button>
+        <button class="button" type="button" id="reg-recent" aria-keyshortcuts="F8">Recent sales</button>
+      </div>
       <div class="reg-ticket-lines" id="reg-lines"></div>
       <div class="reg-totals" id="reg-totals" aria-busy="false">
+        <button class="reg-text-button reg-adjust-button" type="button" id="reg-adjust" aria-keyshortcuts="F9" disabled>Adjust sale</button>
         <div><span>Subtotal</span><strong id="reg-subtotal">$0.00</strong></div>
+        <div id="reg-discount-row" hidden><span>Discount</span><strong id="reg-discount">−$0.00</strong></div>
         <div><span>Tax</span><strong id="reg-tax">$0.00</strong></div>
+        <div id="reg-tip-row" hidden><span>Tip</span><strong id="reg-tip">$0.00</strong></div>
         <div class="reg-grand-total"><span>Total</span><strong id="reg-total">$0.00</strong></div>
         <div class="notice error" id="reg-quote-error" role="status" hidden></div>
         <button class="button primary reg-tender" type="button" id="reg-tender" aria-keyshortcuts="F4" disabled><span>Take payment</span><kbd>F4</kbd></button>

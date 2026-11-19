@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FOLD · Terminal lab</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/workbench.css">
+  <script type="module" src="/terminal-lab.js"></script>
+</head>
+<body class="workbench">
+  <a class="skip" href="#lab-preview">Skip to terminal preview</a>
+  <header class="wb-head"><a class="brand" href="/" aria-label="FOLD register"><span class="brand-name">fold<span>.</span></span></a><nav aria-label="Staff workspaces"><a href="/register">Register</a><a href="/kitchen">Kitchen</a><a href="/sales">Sales</a><a href="/ops">Operations</a></nav></header>
+  <main class="wb-main">
+    <div class="wb-intro"><div><p class="eyebrow muted">HARDWARE PREVIEW</p><h1>Terminal lab</h1><p>Test FOLD at real counter-screen dimensions before putting it in front of staff.</p></div><a class="button" href="/improvements">Release changes</a></div>
+    <section class="wb-panel wb-controls" aria-label="Preview controls">
+      <label>Display profile<select id="lab-profile"><option value="seller">Full HD seller · 1920 × 1080</option><option value="compact">Compact counter · 1366 × 768</option><option value="customer">Customer display · 1280 × 800</option><option value="scaled">Full HD at 125% · 1536 × 864</option><option value="custom">Custom dimensions</option></select></label>
+      <label>Surface<select id="lab-surface"><option value="register">Cashier register</option><option value="counter">Customer display</option><option value="kitchen">Kitchen board</option><option value="kiosk">Self-service kiosk</option><option value="pickup">Pickup board</option><option value="ops">Operations</option><option value="sales">Sales</option></select></label>
+      <label>Width<input id="lab-width" type="number" min="320" max="3840" step="1" value="1920" disabled></label>
+      <label>Height<input id="lab-height" type="number" min="300" max="2400" step="1" value="1080" disabled></label>
+      <div class="wb-actions"><button type="button" id="lab-rotate" class="button">Rotate</button><a id="lab-open" class="button" href="/register" target="_blank" rel="noopener">Open surface</a></div>
+    </section>
+    <p id="lab-context" class="wb-context">The preview fits inside this window. Layout inside it still uses the selected CSS pixel dimensions.</p>
+    <div id="lab-preview" class="wb-preview" tabindex="-1"><div id="lab-shell"><iframe id="lab-frame" title="FOLD terminal preview"></iframe></div></div>
+    <section class="wb-panel wb-diagnostics" aria-labelledby="lab-report-title">
+      <div><h2 id="lab-report-title">Viewport diagnostics</h2><p>Measures this browser’s layout and visible controls. This is not a physical hardware or accessibility certification.</p></div>
+      <dl id="lab-results" class="wb-metrics" aria-live="polite"></dl>
+      <ul id="lab-small-targets" class="wb-target-list"></ul>
+      <div class="wb-actions"><button type="button" class="button primary" id="lab-measure">Measure now</button><button type="button" class="button" id="lab-export" disabled>Download diagnostics</button></div>
+    </section>
+    <p class="wb-context">Hardware references <a href="https://squareup.com/us/en/hardware/register/specs">Square Register dimensions</a> · <a href="https://docs.clover.com/dev/docs/clover-devices-tech-specs">Clover display resolutions</a> · <a href="https://www.w3.org/WAI/WCAG22/Understanding/target-size-enhanced.html">W3C 44 CSS pixel target guidance</a></p>
+  </main>
+</body>
+</html>

@@ -4,8 +4,10 @@ import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startLiveLayer } from './live.mjs';
-import { createOrders, HttpError } from './orders.mjs';
+import { createOrders, locations, posPolicy } from './orders.mjs';
+import { salesCsv, salesReport } from './reports.mjs';
 import { now, openStore } from './store.mjs';
+import { HttpError } from './validation.mjs';
 
 const port = Number(process.env.FOLD_PORT ?? '17730');
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('FOLD_PORT must be a TCP port from 0 to 65535.');
@@ -82,9 +84,9 @@ const types = {
   '.svg': 'image/svg+xml',
   '.woff2': 'font/woff2',
 };
-const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'";
 function staticFile(path, method, res) {
-  const route = /^\/(register|kiosk|ops|pickup)\/?$/.exec(path)?.[1];
+  const route = /^\/(register|kiosk|ops|pickup|kitchen|counter|terminal-lab|improvements|sales)\/?$/.exec(path)?.[1];
   const page = path === '/' ? 'register' : route === 'kiosk' ? 'index' : route;
   const file = page ? `/${page}.html` : path;
   const type = types[extname(file)];
@@ -154,6 +156,18 @@ const server = createServer(async (req, res) => {
       if (pathname === '/api/devices') return json(res, 200, fleetState());
       if (pathname === '/api/orders') return json(res, 200, orders.list());
       if (pathname === '/api/pickup') return json(res, 200, orders.pickup(searchParams.get('store')));
+      if (pathname === '/api/pos-policy') return json(res, 200, posPolicy);
+      if (pathname === '/api/recent-sales') return json(res, 200, orders.recent(searchParams.get('device'), searchParams.get('limit')));
+      if (pathname === '/api/availability') return json(res, 200, orders.inventory.list(searchParams.get('storeId')));
+      if (pathname === '/api/reports/sales') return json(res, 200, salesReport(store, locations, searchParams));
+      if (pathname === '/api/reports/sales.csv') {
+        const csv = salesCsv(salesReport(store, locations, searchParams));
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="fold-sales.csv"',
+          'Cache-Control': 'no-store',
+        });
+        return res.end(csv);
+      }
       const receipt = /^\/api\/orders\/([^/]+)$/.exec(pathname);
       if (receipt) return json(res, 200, { order: orders.get(receipt[1], searchParams.get('sessionId')) });
       if (pathname === '/api/audit') return json(res, 200, { audit: store.history() });
@@ -176,6 +190,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST') {
       if (pathname === '/api/sessions') return json(res, 201, orders.openSession((await body(req)).deviceId));
       if (pathname === '/api/quote') return json(res, 200, { quote: orders.quote(await body(req)) });
+      if (pathname === '/api/availability') return json(res, 200, orders.inventory.update(await body(req)));
       if (pathname === '/api/orders') {
         const result = orders.order(await body(req));
         return json(res, result.duplicate ? 200 : 201, result);
@@ -187,12 +202,20 @@ const server = createServer(async (req, res) => {
       }
       const orderStatus = /^\/api\/orders\/([^/]+)\/status$/.exec(pathname);
       if (orderStatus) return json(res, 200, { order: orders.update(orderStatus[1], (await body(req)).status) });
+      const refund = /^\/api\/orders\/([^/]+)\/refund$/.exec(pathname);
+      if (refund) {
+        const result = orders.refund(refund[1], await body(req));
+        return json(res, 200, result);
+      }
     }
     throw new HttpError(404, 'API route was not found.');
   } catch (error) {
     const expected = error instanceof HttpError;
     if (!expected) console.error(error);
-    if (!res.headersSent) json(res, expected ? error.status : 500, { error: expected ? error.message : 'Fold could not complete this request.' });
+    if (!res.headersSent) json(res, expected ? error.status : 500, {
+      error: expected ? error.message : 'Fold could not complete this request.',
+      ...(expected && error.details),
+    });
     else res.destroy();
   }
 });

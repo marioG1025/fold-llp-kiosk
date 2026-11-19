@@ -8,7 +8,9 @@
   <title>Fold Coffee & Patisserie — Operations</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/ops.tools.css">
   <script defer src="/shared.js"></script>
+  <script defer src="/ops.tools.js"></script>
   <script defer src="/ops.js"></script>
 </head>
 <body class="operations">
@@ -31,7 +33,7 @@
       <div>
         <p class="eyebrow muted">FOLD COFFEE &amp; PATISSERIE</p>
         <h1>Operations</h1>
-        <p>Manage kiosk menus, staged releases and the pickup queue.</p>
+        <p>Manage the fleet, stock, orders and sales.</p>
       </div>
       <p id="connection" class="status-pill">Connecting</p>
     </div>
@@ -39,12 +41,42 @@
       <button class="tab is-active" type="button" data-tab="rollout" aria-pressed="true"><span data-icon="layers"></span> Menu rollout</button>
       <button class="tab" type="button" data-tab="devices" aria-pressed="false"><span data-icon="store"></span> Stores &amp; devices</button>
       <button class="tab" type="button" data-tab="orders" aria-pressed="false"><span data-icon="bag"></span> Order queue</button>
+      <button class="tab" type="button" data-tab="stock" aria-pressed="false"><span data-icon="store"></span> Availability</button>
+      <button class="tab" type="button" data-tab="reports" aria-pressed="false"><span data-icon="layers"></span> Sales</button>
+      <a class="tab" href="/kitchen"><span data-icon="screen"></span> Kitchen</a>
       <a class="tab pickup-link" href="/pickup" target="_blank" rel="noopener" aria-label="Open pickup display in a new tab"><span data-icon="screen"></span> Pickup display</a>
     </nav>
     <div class="notice" id="ops-notice" role="status" hidden></div>
     <section id="rollout" class="ops-view" aria-label="Menu rollout"><p class="loading">Loading releases…</p></section>
     <section id="devices" class="ops-view" aria-label="Stores and devices" hidden></section>
     <section id="orders" class="ops-view" aria-label="Order queue" hidden></section>
+    <section id="stock" class="ops-view" aria-labelledby="stock-title" hidden>
+      <div class="panel">
+        <div class="ops-tools-heading"><h2 id="stock-title">Item availability</h2>
+          <div class="ops-tools-filters">
+            <label class="field">Store<select id="stock-store" class="select"></select></label>
+            <label class="field">Find item<input type="search" id="stock-search" autocomplete="off"></label>
+            <label class="field">Show<select id="stock-filter" class="select"><option value="all">All items</option><option value="unavailable">Unavailable</option><option value="limited">Limited stock</option></select></label>
+          </div>
+        </div>
+        <div class="notice" id="stock-notice" role="status" hidden></div>
+        <div id="stock-results"><p class="loading">Loading availability…</p></div>
+      </div>
+    </section>
+    <section id="reports" class="ops-view" aria-labelledby="report-title" hidden>
+      <div class="panel">
+        <div class="ops-tools-heading"><h2 id="report-title">Sales report</h2>
+        <form id="report-filters" class="ops-tools-filters">
+          <label class="field">Store<select id="report-store" class="select"></select></label>
+          <label class="field">From (UTC)<input type="date" name="from"></label>
+          <label class="field">Through (UTC)<input type="date" name="to"></label>
+          <button type="submit" class="button primary">Apply</button>
+          <a href="/api/reports/sales.csv" class="button" id="report-download" download hidden>Export CSV</a>
+        </form></div>
+        <div class="notice" id="report-notice" role="status" hidden></div>
+        <div id="report-results"><p class="loading">Loading sales…</p></div>
+      </div>
+    </section>
   </main>
   <dialog class="dialog" id="ops-dialog" aria-labelledby="ops-dialog-title"></dialog>
   <footer class="site-footer"><span>FOLD COFFEE &amp; PATISSERIE</span><span>OPERATIONS</span></footer>

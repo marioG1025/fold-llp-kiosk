@@ -15,14 +15,29 @@ npm start
 
 - [Cashier register](http://127.0.0.1:17730/)
 - [Self-service kiosk](http://127.0.0.1:17730/kiosk)
+- [Customer counter display](http://127.0.0.1:17730/counter)
+- [Kitchen board](http://127.0.0.1:17730/kitchen)
 - [Operations console](http://127.0.0.1:17730/ops)
 - [Customer pickup display](http://127.0.0.1:17730/pickup)
+- [Sales reports](http://127.0.0.1:17730/sales)
+- [Terminal Lab](http://127.0.0.1:17730/terminal-lab)
+- [Search all 100 release changes](http://127.0.0.1:17730/improvements)
 
 `FOLD_PORT` sets the HTTP port, `FOLD_DATA` selects the SQLite and generated Wasm directory, and `LLP_ROOT` selects an existing LLP checkout. The default data directory is `.fold-data/`, which should remain local. Restarting against the same data directory restores the published menu assignments, accepted orders, and server-side session versions.
 
 ## Ring up a sale
 
 Open the register, choose a location, and tap item keys to build a ticket. Use the ticket controls for modifiers, quantities, and removals. In the tender screen, select **Cash** and enter the amount received, or choose **Demo card**. The server validates the total and calculates change in cents. Each completed sale creates a receipt and goes to the same kitchen queue as a kiosk order.
+
+Use **Park** to hold a named ticket while serving another guest. Recall uses the original menu version even after a rollout. The register also lets staff adjust tips and discounts, add an internal prep note, reopen recent receipts, and customize quick keys. Parked tickets and quick keys follow the register inside the same browser profile. Open **Customer display** from the register to mirror buyer-visible details in another tab of that browser.
+
+Use **Kitchen** for a station and store view of prep and handoff, and **Operations** for stock overrides and full demo refunds. Kitchen status is shared across a ticket, so advancing mixed-station work changes the whole ticket. **Sales** reconciles orders and refunds by store and UTC date and can export the filtered data as CSV.
+
+## Screen targets and the 100 changes
+
+Terminal Lab embeds the actual app at **1920 × 1080**, **1280 × 800**, **1366 × 768**, or a custom CSS viewport. It can measure horizontal overflow and primary touch targets, and download the diagnostics as JSON. [Hardware research and limits](docs/hardware.md)
+
+The release ledger links 100 changes to their source. [Register](docs/register-improvements.md) · [Backend](docs/backend-improvements.md) · [Kitchen, operations and pickup](docs/operations-improvements.md) · [Customer display, terminal preview and sales](docs/counter-improvements.md)
 
 ## Try a live rollout
 
