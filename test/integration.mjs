@@ -263,4 +263,29 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     assert.equal(device.installedVersion, 2);
     assert.equal((await request('orders')).orders.find(order => order.id === seasonalOrder.id).totalCents, 785);
   });
+
+  await t.test('cashier checkout validates tender and persists exact change without duplicate sales', async () => {
+    const cashSession = (await open('market-01')).session;
+    const sale = cart(cashSession.id);
+    const { quote } = await request('quote', sale);
+    await checkout({ ...sale, tender: { method: 'cash', receivedCents: quote.totalCents - 1 } }, 422);
+    await checkout({ ...sale, tender: { method: 'cash', receivedCents: quote.totalCents + 0.1 } }, 422);
+    assert.equal((await request(`sessions/${cashSession.id}`)).session.orderId, null);
+    const tendered = { ...sale, tender: { method: 'cash', receivedCents: quote.totalCents + 237 } };
+    const cash = (await checkout(tendered)).order;
+    assert.deepEqual(cash.tender, { method: 'cash', receivedCents: quote.totalCents + 237, changeCents: 237 });
+    const replay = await checkout(tendered, 200);
+    assert.equal(replay.duplicate, true);
+    assert.equal(replay.order.id, cash.id);
+    await checkout({ ...tendered, tender: { method: 'card-demo' } }, 409);
+    await checkout({ ...tendered, tender: { method: 'cash', receivedCents: quote.totalCents + 500 } }, 409);
+    const { order: reread } = await request(`orders/${cash.id}?sessionId=${cashSession.id}`);
+    assert.deepEqual(reread.tender, cash.tender);
+
+    const cardSession = (await open('market-01')).session;
+    const cardData = cart(cardSession.id);
+    await checkout({ ...cardData, tender: { method: 'card-demo', receivedCents: 1000 } }, 422);
+    const cardSale = (await checkout({ ...cardData, tender: { method: 'card-demo' } })).order;
+    assert.deepEqual(cardSale.tender, { method: 'card-demo' });
+  });
 });

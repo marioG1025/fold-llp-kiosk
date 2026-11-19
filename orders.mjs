@@ -8,6 +8,18 @@ const storeIds = new Set(devices.map(device => device.storeId));
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 
+function resolveTender(input, totalCents) {
+  if (input === undefined) return null; // Self-service checkout uses the existing demo path.
+  if (!isObject(input)) throw new HttpError(422, 'Choose cash or demo card.');
+  if (input.method === 'card-demo' && Object.keys(input).length === 1) return { method: 'card-demo' };
+  if (input.method !== 'cash' || Object.keys(input).some(key => !['method', 'receivedCents'].includes(key))) {
+    throw new HttpError(422, 'Choose cash or demo card.');
+  }
+  const { receivedCents } = input;
+  if (!Number.isSafeInteger(receivedCents) || receivedCents < totalCents) throw new HttpError(422, 'Cash received must cover the total.');
+  return { method: 'cash', receivedCents, changeCents: receivedCents - totalCents };
+}
+
 export class HttpError extends Error {
   constructor(status, message) {
     super(message);
@@ -86,7 +98,9 @@ export function createOrders({ store, live, notify }) {
     const key = input.idempotencyKey;
     if (typeof key !== 'string' || !/^[a-z0-9:_-]{8,128}$/i.test(key)) throw new HttpError(422, 'A valid checkout retry key is required.');
     const priced = price(input);
-    const { session: pinned, menu, quote, payload } = priced;
+    const { session: pinned, menu, quote } = priced;
+    const tender = resolveTender(input.tender, quote.totalCents);
+    const payload = tender ? JSON.stringify({ ...JSON.parse(priced.payload), tender }) : priced.payload;
     const device = live.device(pinned.deviceId);
     const result = store.transaction(() => {
       const previous = store.get('SELECT * FROM orders WHERE idempotency_key = ?', key);
@@ -100,7 +114,7 @@ export function createOrders({ store, live, notify }) {
       const record = {
         id, sessionId: pinned.id, deviceId: device.id, storeId: device.storeId, storeName: device.storeName,
         version: pinned.version, wireVersion: pinned.wireVersion, fulfillment: input.fulfillment,
-        pickup: menu.pickup, ...quote, createdAt,
+        pickup: menu.pickup, ...quote, ...(tender ? { tender } : {}), createdAt,
       };
       store.run('INSERT INTO orders(id, session_id, idempotency_key, payload, status, receipt, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
         id, pinned.id, key, payload, 'received', JSON.stringify(record), createdAt);

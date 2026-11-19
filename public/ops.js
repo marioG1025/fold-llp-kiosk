@@ -364,13 +364,16 @@
 
   function viewOrder(order, trigger) {
     if (!order) return;
+    const tender = order.tender?.method === 'cash'
+      ? `<div class="total"><span>Cash received</span><span>${money(order.tender.receivedCents)}</span></div><div class="total"><span>Change</span><strong>${money(order.tender.changeCents)}</strong></div>`
+      : order.tender?.method === 'card-demo' ? '<div class="total"><span>Tender</span><span>Demo card</span></div>' : '';
     openDialog(`${closeButton()}<div class="dialog-body">
       <p class="eyebrow muted">${escape(order.storeName)} · MENU ${escape(versions(order.version).toUpperCase())}</p>${title("Order " + order.number)}
       <p class="dialog-description">${escape(label(order.status))} · ${order.fulfillment === "to-go" ? "To go" : "For here"} · ${escape(time(order.createdAt))}</p>
       <ul class="checkout-lines">${order.items.map((item) => `<li><div><strong>${item.quantity} × ${escape(item.name)}</strong>
       ${item.modifiers?.length ? `<small>${escape(item.modifiers.map((modifier) => modifier.name).join(" · "))}</small>` : ""}</div><strong>${money(item.lineTotalCents)}</strong></li>`).join("")}</ul>
       <div class="quote-breakdown"><div class="total"><span>Subtotal</span><span>${money(order.subtotalCents)}</span></div>
-      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div><div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div></div>
+      <div class="total"><span>Tax</span><span>${money(order.taxCents)}</span></div><div class="total"><span>Total</span><strong>${money(order.totalCents)}</strong></div>${tender}</div>
       <div class="receipt-pickup"><strong>${escape(order.pickup?.title)}</strong><p>${escape(order.pickup?.description)}</p></div>
       </div>`, trigger);
   }

@@ -84,7 +84,8 @@ const types = {
 };
 const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 function staticFile(path, method, res) {
-  const page = path === '/' ? 'index' : /^\/(ops|pickup)\/?$/.exec(path)?.[1];
+  const route = /^\/(register|kiosk|ops|pickup)\/?$/.exec(path)?.[1];
+  const page = path === '/' ? 'register' : route === 'kiosk' ? 'index' : route;
   const file = page ? `/${page}.html` : path;
   const type = types[extname(file)];
   if (!type || !/^\/(?:[a-z0-9_-]+\/)*[a-z0-9_.-]+$/i.test(file)) throw new HttpError(404, 'Page was not found.');

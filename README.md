@@ -2,7 +2,7 @@
 
 ![FOLD café photography featuring a cappuccino and croissant](public/images/hero.webp)
 
-FOLD is a touchscreen coffee shop kiosk and a retail rollout experiment built on [Live Layer Protocol](https://github.com/nik190799/live-layer-protocol). The core menu has 57 distinct items across coffee, specialty drinks, tea and matcha, refreshers, patisserie, and kitchen. Customers can customize an order and get a pickup receipt. The operations console manages the queue and pilots a revised pickup flow across a simulated storefront fleet. The seasonal release expands the menu to 59 items.
+FOLD is a cashier-operated coffee shop register, a self-service kiosk, and a retail rollout experiment built on [Live Layer Protocol](https://github.com/nik190799/live-layer-protocol). The core menu has 57 distinct items across coffee, specialty drinks, tea and matcha, refreshers, patisserie, and kitchen. The operations console manages the queue and pilots a revised pickup flow across a simulated storefront fleet. The seasonal release expands the menu to 59 items.
 
 ## Run locally
 
@@ -13,11 +13,16 @@ npm run setup
 npm start
 ```
 
-- [Order kiosk](http://127.0.0.1:17730/)
+- [Cashier register](http://127.0.0.1:17730/)
+- [Self-service kiosk](http://127.0.0.1:17730/kiosk)
 - [Operations console](http://127.0.0.1:17730/ops)
 - [Customer pickup display](http://127.0.0.1:17730/pickup)
 
 `FOLD_PORT` sets the HTTP port, `FOLD_DATA` selects the SQLite and generated Wasm directory, and `LLP_ROOT` selects an existing LLP checkout. The default data directory is `.fold-data/`, which should remain local. Restarting against the same data directory restores the published menu assignments, accepted orders, and server-side session versions.
+
+## Ring up a sale
+
+Open the register, choose a location, and tap item keys to build a ticket. Use the ticket controls for modifiers, quantities, and removals. In the tender screen, select **Cash** and enter the amount received, or choose **Demo card**. The server validates the total and calculates change in cents. Each completed sale creates a receipt and goes to the same kitchen queue as a kiosk order.
 
 ## Try a live rollout
 

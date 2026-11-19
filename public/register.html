@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f5ee">
+  <meta name="description" content="Fold Coffee &amp; Patisserie cashier register.">
+  <title>Fold Coffee &amp; Patisserie — Register</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/register.css">
+  <script defer src="/shared.js"></script>
+  <script defer src="/register.js"></script>
+</head>
+<body class="register">
+  <a class="skip" href="#register-menu">Skip to register menu</a>
+  <header class="reg-header">
+    <div class="reg-topbar">
+      <div class="reg-identity">
+        <a class="brand" href="/" aria-label="Fold cashier register"><span class="brand-name">fold<span>.</span></span></a>
+        <span class="reg-header-rule" aria-hidden="true"></span>
+        <span class="reg-product-label">Point of sale</span>
+      </div>
+      <div class="reg-header-tools">
+        <div class="reg-location store-choice">
+          <span data-icon="pin"></span>
+          <label class="sr-only" for="reg-device">Register location</label>
+          <select class="select" id="reg-device" disabled><option>Connecting…</option></select>
+        </div>
+        <a class="reg-ops-link" href="/ops" aria-label="Operations"><span data-icon="sliders"></span><span class="reg-ops-text">Operations</span></a>
+      </div>
+    </div>
+  </header>
+  <main class="reg-layout">
+    <section class="reg-catalog" aria-labelledby="reg-catalog-title" id="register-menu">
+      <div class="reg-workspace">
+        <div>
+          <p class="eyebrow reg-overline">FOLD COFFEE &amp; PATISSERIE</p>
+          <h1 id="reg-catalog-title">Register</h1>
+        </div>
+        <div class="reg-session-status">
+          <span id="reg-connection" class="status-pill">Connecting</span>
+          <span id="reg-version" class="reg-version" hidden></span>
+        </div>
+      </div>
+      <div id="reg-notice" class="notice" role="status" hidden></div>
+      <div class="reg-tools">
+        <label class="reg-search">
+          <span data-icon="search"></span>
+          <input type="search" id="reg-search" autocomplete="off" placeholder="Search menu items" aria-label="Search menu items" aria-keyshortcuts="F2" disabled>
+          <kbd>F2</kbd>
+        </label>
+      </div>
+      <section class="reg-quick" aria-labelledby="reg-quick-title">
+        <h2 id="reg-quick-title">Quick keys</h2>
+        <div class="reg-quick-grid" id="reg-quick"></div>
+      </section>
+      <section class="reg-keys" aria-labelledby="reg-keys-title">
+        <div class="reg-key-header">
+          <h2 id="reg-keys-title">Product keys</h2>
+          <span id="reg-result-count"></span>
+        </div>
+        <div class="reg-categories" id="reg-categories" aria-label="Menu categories"></div>
+        <div class="reg-key-grid" id="reg-products" aria-busy="true">
+          <div class="reg-loading">Loading the register menu…</div>
+        </div>
+      </section>
+    </section>
+    <aside class="reg-ticket" id="reg-ticket" aria-labelledby="reg-ticket-title" tabindex="-1">
+      <div class="reg-ticket-head">
+        <div><p class="eyebrow reg-overline">CURRENT SALE</p><h2 id="reg-ticket-title">Ticket</h2></div>
+        <button class="reg-text-button" type="button" id="reg-void" disabled>Void ticket</button>
+      </div>
+      <div class="reg-service" id="reg-service" aria-label="Service type">
+        <button type="button" data-service="here" aria-pressed="true"><span data-icon="cup"></span>For here</button>
+        <button type="button" data-service="to-go" aria-pressed="false"><span data-icon="bag"></span>To go</button>
+      </div>
+      <div class="reg-ticket-lines" id="reg-lines"></div>
+      <div class="reg-totals" id="reg-totals" aria-busy="false">
+        <div><span>Subtotal</span><strong id="reg-subtotal">$0.00</strong></div>
+        <div><span>Tax</span><strong id="reg-tax">$0.00</strong></div>
+        <div class="reg-grand-total"><span>Total</span><strong id="reg-total">$0.00</strong></div>
+        <div class="notice error" id="reg-quote-error" role="status" hidden></div>
+        <button class="button primary reg-tender" type="button" id="reg-tender" aria-keyshortcuts="F4" disabled><span>Take payment</span><kbd>F4</kbd></button>
+        <p class="reg-register-label" id="reg-register-label"></p>
+      </div>
+    </aside>
+  </main>
+  <button class="button primary reg-mobile-ticket" type="button" id="reg-mobile-ticket" hidden>View ticket</button>
+  <dialog class="dialog reg-dialog" id="reg-dialog" aria-labelledby="reg-dialog-title"></dialog>
+  <div class="sr-only" id="reg-announcement" role="status"></div>
+</body>
+</html>
