@@ -1,0 +1,7 @@
+node_modules/
+.upstream/
+.fold-data/
+.soak/
+*.log
+*.sqlite*
+.env*

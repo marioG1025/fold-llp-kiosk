@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f9f7f1">
+  <meta name="description" content="Fold operations console for store, device, menu rollout and order management.">
+  <title>Fold Coffee & Patisserie — Operations</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/shared.js"></script>
+  <script defer src="/ops.js"></script>
+</head>
+<body class="operations">
+  <a class="skip" href="#main">Skip to operations</a>
+  <header class="site-header">
+    <div class="topbar">
+      <a class="brand" href="/" aria-label="Fold coffee and patisserie home">
+        <span class="brand-name">fold<span>.</span></span>
+        <span class="brand-caption">COFFEE &amp;<br>PATISSERIE</span>
+      </a>
+      <div class="header-tools">
+        <span class="ops-current"><span data-icon="sliders"></span> Operations</span>
+        <span class="header-divider"></span>
+        <a class="ops-link" href="/"><span data-icon="bag"></span> Open kiosk</a>
+      </div>
+    </div>
+  </header>
+  <main class="ops-layout" id="main">
+    <div class="ops-intro">
+      <div>
+        <p class="eyebrow muted">FOLD COFFEE &amp; PATISSERIE</p>
+        <h1>Operations</h1>
+        <p>Manage kiosk menus, staged releases and the pickup queue.</p>
+      </div>
+      <p id="connection" class="status-pill">Connecting</p>
+    </div>
+    <nav class="ops-nav" aria-label="Operations sections">
+      <button class="tab is-active" type="button" data-tab="rollout" aria-pressed="true"><span data-icon="layers"></span> Menu rollout</button>
+      <button class="tab" type="button" data-tab="devices" aria-pressed="false"><span data-icon="store"></span> Stores &amp; devices</button>
+      <button class="tab" type="button" data-tab="orders" aria-pressed="false"><span data-icon="bag"></span> Order queue</button>
+    </nav>
+    <div class="notice" id="ops-notice" role="status" hidden></div>
+    <section id="rollout" class="ops-view" aria-label="Menu rollout"><p class="loading">Loading releases…</p></section>
+    <section id="devices" class="ops-view" aria-label="Stores and devices" hidden></section>
+    <section id="orders" class="ops-view" aria-label="Order queue" hidden></section>
+  </main>
+  <dialog class="dialog" id="ops-dialog" aria-labelledby="ops-dialog-title"></dialog>
+  <footer class="site-footer"><span>FOLD COFFEE &amp; PATISSERIE</span><span>OPERATIONS</span></footer>
+</body>
+</html>

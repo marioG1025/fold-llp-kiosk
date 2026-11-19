@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f9f7f1">
+  <meta name="description" content="Order coffee and handmade pastries at Fold.">
+  <title>Fold Coffee & Patisserie — Order</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/shared.js"></script>
+  <script defer src="/kiosk.js"></script>
+</head>
+<body class="kiosk">
+  <a class="skip" href="#menu">Skip to menu</a>
+  <header class="site-header">
+    <div class="topbar">
+      <a class="brand" href="/" aria-label="Fold coffee and patisserie home">
+        <span class="brand-name">fold<span>.</span></span>
+        <span class="brand-caption">COFFEE &amp;<br>PATISSERIE</span>
+      </a>
+      <div class="header-tools">
+        <div class="store-choice">
+          <span data-icon="pin"></span>
+          <label for="device" class="sr-only">Kiosk location</label>
+          <select id="device" disabled><option>Connecting…</option></select>
+        </div>
+        <span class="header-divider"></span>
+        <a class="ops-link" href="/ops"><span data-icon="sliders"></span><span>Operations</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout" id="main">
+    <div class="shop">
+      <section class="hero" aria-label="Welcome to Fold">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="hero-mark"></span> THE GOOD STUFF, DAILY.</p>
+          <h1>Good mornings<br>start here.</h1>
+          <p>Specialty coffee. Butter-folded pastry.</p>
+        </div>
+      </section>
+      <section class="menu" aria-labelledby="menu-title" id="menu">
+        <div class="menu-top">
+          <div>
+            <p class="eyebrow muted">MADE FRESH AT FOLD</p>
+            <h2 id="menu-title">The menu</h2>
+          </div>
+          <label class="search">
+            <span data-icon="search"></span>
+            <input id="search" type="search" placeholder="Search the menu" aria-label="Search the menu" autocomplete="off">
+          </label>
+        </div>
+        <div class="catalogue-bar">
+          <div class="categories" id="categories" aria-label="Menu categories"></div>
+          <p class="edition" id="edition" title="Active menu version"></p>
+        </div>
+        <div class="notice" id="menu-notice" role="status" hidden></div>
+        <div class="product-grid" id="products" aria-busy="true">
+          <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="cart" id="cart" aria-labelledby="cart-title" tabindex="-1">
+      <div class="cart-header">
+        <p class="eyebrow muted">FOLD SELF CHECKOUT</p>
+        <div class="cart-title-line">
+          <h2 id="cart-title">Your order</h2>
+          <span class="cart-count" id="count">0</span>
+        </div>
+      </div>
+      <div class="cart-mode" id="service-mode" aria-label="Order type">
+        <button type="button" aria-pressed="true" data-mode="dine-in"><span data-icon="cup"></span>For here</button>
+        <button type="button" aria-pressed="false" data-mode="takeaway"><span data-icon="bag"></span>To go</button>
+      </div>
+      <div class="cart-items" id="cart-items"></div>
+      <div class="cart-footer">
+        <div class="total"><span>Subtotal</span><strong id="subtotal">$0.00</strong></div>
+        <button type="button" class="button primary checkout" id="checkout" disabled><span>Checkout</span><span data-icon="arrow"></span></button>
+        <p class="cart-note"><span data-icon="info"></span> Demo checkout · no real payments</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <span>FOLD COFFEE &amp; PATISSERIE</span>
+    <span id="footer-session">SELF CHECKOUT</span>
+  </footer>
+
+  <button class="button primary mobile-cart" type="button" id="mobile-cart" hidden><span data-icon="bag"></span><span id="mobile-cart-text">Your order</span></button>
+  <dialog class="dialog" id="item-dialog" aria-labelledby="item-dialog-title"></dialog>
+  <dialog class="dialog checkout-dialog" id="checkout-dialog" aria-labelledby="checkout-dialog-title"></dialog>
+  <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

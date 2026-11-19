@@ -1,0 +1,14 @@
+{
+  "name": "fold-llp-kiosk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A specialty coffee kiosk and signed live retail rollout experiment",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node scripts/run.mjs",
+    "test": "node scripts/run.mjs test/integration.mjs",
+    "stress": "node scripts/run.mjs scripts/stress.mjs"
+  }
+}

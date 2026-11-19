@@ -1,0 +1,34 @@
+# Photography
+
+The menu and hero use original artwork generated for FOLD with the built-in ImageGen tool. WebP copies are checked in under `public/images/`. The product grid uses equal-size cells from the contact sheets.
+
+- `hero.webp` — A widescreen editorial café photograph. Ivory cappuccino cup with rosetta and flaky croissant on the right, dark espresso-walnut table and olive linen, golden side light, dark negative space on the left. No text, branding or borders.
+- `menu-atlas.webp` — A 3 × 3 edge-to-edge menu contact sheet. Row 1 flat white, iced matcha and iced vanilla latte. Row 2 almond croissant, raspberry-pistachio croissant and pain au chocolat. Row 3 egg focaccia, blueberry granola bowl and chocolate chip cookie. Warm stone, natural shadows and individual centered compositions.
+- `seasonal-atlas.webp` — A two-panel contact sheet of a maple cloud latte in a tall fluted glass and a pear frangipane pastry. Warm cream stone, natural window shadows and centered compositions. No text, people or logos.
+
+## Generation prompts
+
+### bar-atlas.webp
+
+Luxury Chicago specialty café menu food photography with warm stone, linen, natural soft side light, restrained cream and walnut colors, genuine fine texture. Single precise 4 COLUMN BY 4 ROW contact sheet, overall perfect square, 16 separate equal square compositions with no gutters, no borders, no text or letters, nothing crossing cell boundaries. Each dish is centered and fully inside its own cell. STRICT row-major selection. Row 1: short double espresso in demitasse; black Americano in ceramic; foamy cappuccino with heart; tiny cortado in ribbed clear glass. Row 2: manual pourover glass server plus unlabelled tasting cup; black filter coffee in mustard mug; tall iced cold brew in glass; nitro cold brew with a thick creamy foam head in footed glass. Row 3: orange espresso tonic with orange slice; brown-sugar shaken iced espresso with cinnamon dust; chocolate miso mocha in ceramic; lavender honey latte with a sprig. Row 4: pistachio rose latte with crushed pistachio and tiny rose petals; gray black-sesame latte in stoneware with sesame on foam; purple ube-coconut latte in clear glass; coffee with cinnamon and orange peel in a rustic cup.
+
+### bakes-atlas.webp
+
+Luxury Chicago specialty café menu food photography with warm stone, linen, natural soft side light, restrained cream and walnut colors, genuine fine texture. Single precise 4 COLUMN BY 4 ROW contact sheet, overall perfect square, 16 separate equal square compositions with no gutters, no borders, no text or letters, nothing crossing cell boundaries. Each dish is centered and fully inside its own cell. STRICT row-major selection. Row 1: layered pink strawberry iced matcha; roasted hojicha latte with beige foam; Earl Grey London Fog tea latte in stoneware; chai latte with cinnamon. Row 2: pale jade jasmine tea in a glass teacup; amber smoked Earl Grey tea in warm ceramic; vivid ruby iced hibiscus tea; fresh pale yuzu citrus soda with peel. Row 3: cucumber mint soda; dark hot drinking chocolate in ceramic with whipped cream; classic butter croissant; twisted Swedish cardamom bun. Row 4: caramelized kouign amann; orange sugar rolled morning bun; pink guava Danish; braided chocolate hazelnut babka slice.
+
+### kitchen-atlas.webp
+
+Luxury Chicago specialty café menu food photography with warm stone, linen, natural soft side light, restrained cream and walnut colors, genuine fine texture. Single precise 4 COLUMN BY 4 ROW contact sheet, overall perfect square, 16 separate equal square compositions with no gutters, no borders, no text or letters, nothing crossing cell boundaries. Each dish is centered and fully inside its own cell. STRICT row-major selection. Row 1: glazed lemon tart; Basque cheesecake slice with dark top; thick banana bread slice; blueberry scone. Row 2: orange olive oil cake slice; caramelized canelé pastry; avocado sourdough toast with herbs; smoked salmon and cream cheese bagel. Row 3: cut breakfast burrito with egg; wedge of mushroom quiche; ham Gruyère croissant sandwich; tomato mozzarella focaccia sandwich. Row 4: turkey pesto sandwich; roasted red pepper and zucchini sandwich; kale and farro grain bowl; creamy tomato soup in a ceramic bowl.
+
+
+### hero
+
+Asset for FOLD, a premium millennial/Gen Z specialty coffee and patisserie kiosk. Generate a single cinematic 3:1 wide horizontal café food photograph, designed to be cropped to a very wide website header. On RIGHT half, striking large ivory ceramic cappuccino cup with a rosetta and flaky golden croissant on a cream plate, subtly wrinkled dark olive linen, dark espresso-walnut restaurant table, golden hard side light, premium editorial food photography shot in an independent upscale cafe. LEFT HALF near-black warm brown with minimal detail for overlay text. Rich film texture, exceptionally realistic handmade surfaces and intentional composition. No lettering, logo, text, borders, or illustration.
+
+### menu
+
+Create a single contact sheet for a premium coffee POS menu with EXACTLY 3 columns and 3 rows, nine perfectly equal square photographs edge-to-edge, absolutely NO borders/gutters, no typography and no labels. Each equally sized cell is an independent photo with dish centered several cm away from all edges and no props spilling across cell boundaries. Strict order left to right: row 1 a flat white with latte art in cream ceramic, a clear iced matcha latte with milky gradient, a layered iced vanilla latte in clear glass; row 2 a golden almond croissant with sliced almonds, a raspberry and pistachio croissant with fresh raspberries, a thick dark chocolate pain au chocolat; row 3 a toasted focaccia breakfast sandwich with soft scrambled egg + herbs, a blueberry yogurt granola bowl in cream ceramic, and a thick salted chocolate chip cookie on a pale plate. High-end café photography, organic imperfections, warm stone linen cream tones and deep rich shadows, consistent editorial lighting, overhead or 3/4 angle, individual isolated compositions. Image overall 1:1, high resolution. No writing, hands, logo, typography, or watermarks.
+
+### seasonal
+
+An editorial food photograph contact sheet for luxury specialty café menu, EXACTLY TWO columns and ONE row, two equal square scenes occupying entire canvas edge to edge without borders, no visual elements crossing midpoint. Left square: iced maple cloud latte in transparent tall fluted glass, gradient of caramel espresso beneath lush cream, a few visible ice cubes, warm cream stone surface. Right square: pear frangipane pastry, deeply golden laminated oval Danish topped with sliced poached pear and toasted almonds, fine white porcelain on warm stone. Food individually centered away from edges, soft natural window shadows, authentic magazine macro textures. Overall wide 2:1 composition. No text, people, logos or graphics.
