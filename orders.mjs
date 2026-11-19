@@ -76,8 +76,7 @@ export function createOrders({ store, live, notify }) {
     return session(id);
   }
 
-  function price(input) {
-    const pinned = session(input.sessionId);
+  function price(input, pinned = session(input.sessionId)) {
     if (!['here', 'to-go'].includes(input.fulfillment)) throw new HttpError(422, 'Choose For here or To go.');
     if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 20) {
       throw new HttpError(422, 'Choose between 1 and 20 cart lines.');
@@ -256,5 +255,6 @@ export function createOrders({ store, live, notify }) {
     return priced.quote;
   }
 
-  return { openSession, session, quote, order, refund, update, get, list, pickup, recent, inventory };
+  return { openSession, session, quote, counterQuote: (input, pinned) => price(input, pinned).quote,
+    order, refund, update, get, list, pickup, recent, inventory };
 }

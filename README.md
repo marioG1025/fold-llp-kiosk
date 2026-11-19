@@ -29,7 +29,9 @@ npm start
 
 Open the register, choose a location, and tap item keys to build a ticket. Use the ticket controls for modifiers, quantities, and removals. In the tender screen, select **Cash** and enter the amount received, or choose **Demo card**. The server validates the total and calculates change in cents. Each completed sale creates a receipt and goes to the same kitchen queue as a kiosk order.
 
-Use **Park** to hold a named ticket while serving another guest. Recall uses the original menu version even after a rollout. The register also lets staff adjust tips and discounts, add an internal prep note, reopen recent receipts, and customize quick keys. Parked tickets and quick keys follow the register inside the same browser profile. Open **Customer display** from the register to mirror buyer-visible details in another tab of that browser.
+Use **Park** to hold a named ticket while serving another guest. Recall uses the original menu version even after a rollout. The register also lets staff adjust tips and discounts, add an internal prep note, reopen recent receipts, and customize quick keys. Parked tickets and quick keys follow the register inside the same browser profile. Open **Customer display** for the same terminal in another browser session to mirror buyer-visible details through the local service. The display clears after its short connection timeout. It does not receive staff notes, session identifiers, or tender details.
+
+After the register has loaded its menu, the same browser profile can reopen and edit the saved ticket during a connection loss. Tender resumes after the service verifies the pinned session and recalculates the total. If the reply goes missing during checkout, the register checks for the original receipt before offering a retry with the same payment details.
 
 Use **Kitchen** for a station and store view of prep and handoff, and **Operations** for stock overrides and full demo refunds. Kitchen status is shared across a ticket, so advancing mixed-station work changes the whole ticket. **Sales** reconciles orders and refunds by store and UTC date and can export the filtered data as CSV.
 
@@ -68,8 +70,11 @@ flowchart LR
 
 ```sh
 npm test
+npm run drill
 npm run stress -- --rounds 12 --clients 12
 ```
+
+The café drill uses a fresh local service and separate Chromium profiles for the register, customer display, kitchen and pickup board. It disconnects the cashier browser and the selected LLP device's WebSocket, publishes a signed beta release during the outage, and checks price and pickup continuity after reconnect. It also discards a checkout reply after the service records the sale to verify that recovery uses the original receipt. Install a local Edge or Chromium-family browser first, or set `FOLD_BROWSER` to its executable path. The drill starts its own service with `FOLD_DRILL=1` to enable the fault control. The default launcher leaves fault controls disabled.
 
 The stress command runs an isolated service and repeatedly races order checkout with beta deployment and fleet rollback. It checks that old and new sessions retain the correct prices, retry responses reference the original order, and stable kiosks stay on v1. Results are written under `.soak/` and printed to the terminal.
 

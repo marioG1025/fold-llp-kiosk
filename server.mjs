@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createCounter } from './counter.mjs';
 import { startLiveLayer } from './live.mjs';
 import { createOrders, locations, posPolicy } from './orders.mjs';
 import { salesCsv, salesReport } from './reports.mjs';
@@ -38,6 +39,8 @@ try {
   throw error;
 }
 const orders = createOrders({ store, live, notify });
+const counter = createCounter({ store, live, orders, notify });
+const drillEnabled = process.env.FOLD_DRILL === '1';
 const baseline = { version: 1, channel: 'all', deviceId: null, percentage: 100 };
 if (!store.read('rollout')) {
   store.write('rollout', { ...baseline, selected: live.list().map(device => device.id), time: now(), kind: 'baseline' });
@@ -154,6 +157,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET') {
       if (pathname === '/api/health') return json(res, 200, { ok: true, app: 'fold-kiosk' });
       if (pathname === '/api/devices') return json(res, 200, fleetState());
+      if (pathname === '/api/counter') return json(res, 200, counter.read(searchParams.get('device')));
       if (pathname === '/api/orders') return json(res, 200, orders.list());
       if (pathname === '/api/pickup') return json(res, 200, orders.pickup(searchParams.get('store')));
       if (pathname === '/api/pos-policy') return json(res, 200, posPolicy);
@@ -189,6 +193,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === 'POST') {
       if (pathname === '/api/sessions') return json(res, 201, orders.openSession((await body(req)).deviceId));
+      if (pathname === '/api/counter') return json(res, 200, counter.publish(await body(req)));
       if (pathname === '/api/quote') return json(res, 200, { quote: orders.quote(await body(req)) });
       if (pathname === '/api/availability') return json(res, 200, orders.inventory.update(await body(req)));
       if (pathname === '/api/orders') {
@@ -196,6 +201,12 @@ const server = createServer(async (req, res) => {
         return json(res, result.duplicate ? 200 : 201, result);
       }
       if (pathname === '/api/rollout') return json(res, 200, await updateFleet(rolloutSelection(await body(req)), 'publish'));
+      if (pathname === '/api/drill/device' && drillEnabled) {
+        const { deviceId, connected } = await body(req);
+        if (!live.device(deviceId) || typeof connected !== 'boolean') throw new HttpError(422, 'Choose a registered kiosk and connection state.');
+        await live.setConnected(deviceId, connected);
+        return json(res, 200, fleetState());
+      }
       if (pathname === '/api/rollback') {
         await body(req);
         return json(res, 200, await updateFleet(baseline, 'rollback'));
@@ -205,6 +216,7 @@ const server = createServer(async (req, res) => {
       const refund = /^\/api\/orders\/([^/]+)\/refund$/.exec(pathname);
       if (refund) {
         const result = orders.refund(refund[1], await body(req));
+        counter.revoke(result.order);
         return json(res, 200, result);
       }
     }

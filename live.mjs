@@ -85,7 +85,7 @@ export async function startLiveLayer({ root, data, store, notify }) {
 
   const fleet = new Map(devices.map(device => {
     const token = randomBytes(32).toString('hex');
-    return [device.id, { device, token, verified: null, queue: Promise.resolve() }];
+    return [device.id, { device, token, verified: null, queue: Promise.resolve(), connectionQueue: Promise.resolve() }];
   }));
   const tokens = new Map([...fleet.values()].map(runtime => [`Bearer ${runtime.token}`, runtime]));
   for (const [id] of fleet) {
@@ -108,13 +108,13 @@ export async function startLiveLayer({ root, data, store, notify }) {
   broker.on('connection', (peer, request) => {
     const runtime = tokens.get(request.headers.authorization);
     peer.on('error', () => {});
-    if (!runtime || runtime.peer) return peer.close(1008, 'Unknown device');
+    if (!runtime || runtime.peer || runtime.paused) return peer.close(1008, 'Unavailable device');
     let greeted = false;
     peer.on('message', raw => {
       try {
         const message = JSON.parse(raw);
         if (!greeted) {
-          if (message.t !== 'hello' || message.llp !== 1 || message.app !== app || message.id !== runtime.device.id ||
+          if (runtime.paused || runtime.peer || message.t !== 'hello' || message.llp !== 1 || message.app !== app || message.id !== runtime.device.id ||
             message.channel !== runtime.device.channel || message.version !== 0) return peer.close(1008, 'Invalid LLP hello');
           greeted = true;
           runtime.peer = peer;
@@ -156,7 +156,7 @@ export async function startLiveLayer({ root, data, store, notify }) {
       } };
       send(runtime.peer, { t: 'manifest', ...release });
     });
-    if (closing || result.t === 'offline') return false;
+    if (closing || runtime.paused || result.t === 'offline') return false;
     const checked = runtime.checked;
     if (result.t === 'ack' && checked?.wireVersion === wireVersion) {
       if (!restore) store.transaction(() => {
@@ -183,7 +183,7 @@ export async function startLiveLayer({ root, data, store, notify }) {
     const client = runtime.client;
     const ready = runtime.ready;
     const run = runtime.queue.then(async () => {
-      if (!client || !await ready || closing || runtime.client !== client) return false;
+      if (!client || !await ready || closing || runtime.paused || runtime.client !== client) return false;
       // An acknowledged release remains usable even if a subsequent staged deployment is rejected.
       const { installed } = records(runtime.device.id);
       if (!runtime.verified && installed && !await deliver(runtime, installed, { restore: true })) return false;
@@ -196,6 +196,7 @@ export async function startLiveLayer({ root, data, store, notify }) {
   }
 
   async function connect(runtime) {
+    if (closing || runtime.paused || runtime.client) return false;
     const { device } = runtime;
     const host = makeHost();
     const client = new WebSocket(url, { headers: { Authorization: `Bearer ${runtime.token}` } });
@@ -218,7 +219,9 @@ export async function startLiveLayer({ root, data, store, notify }) {
       host.queue.finally(() => host.close()).catch(() => {});
       if (closing) return;
       notify('fleet');
-      runtime.retry = setTimeout(() => connect(runtime).catch(error => console.error('LLP reconnect failed', error)), 500);
+      if (!runtime.paused) {
+        runtime.retry = setTimeout(() => connect(runtime).catch(error => console.error('LLP reconnect failed', error)), 500);
+      }
     });
     client.on('message', async raw => {
       const message = JSON.parse(raw);
@@ -247,6 +250,37 @@ export async function startLiveLayer({ root, data, store, notify }) {
       }
     });
     return synchronize(runtime).finally(() => { if (!closing) notify('fleet'); });
+  }
+
+  function terminate(socket) {
+    if (!socket || socket.readyState === WebSocket.CLOSED) return Promise.resolve();
+    const closed = new Promise(resolve => socket.once('close', resolve));
+    socket.terminate();
+    return closed;
+  }
+
+  function setConnected(id, connected) {
+    const runtime = fleet.get(id);
+    const run = runtime.connectionQueue.then(async () => {
+      const changed = Boolean(runtime.paused) === connected;
+      runtime.paused = !connected;
+      clearTimeout(runtime.retry);
+      if (connected) {
+        if (runtime.client) await synchronize(runtime);
+        else await connect(runtime);
+      } else {
+        // Pause automatic recovery before closing both ends of the real LLP transport.
+        await Promise.all([terminate(runtime.client), terminate(runtime.peer)]);
+        await runtime.queue;
+      }
+      if (changed) {
+        store.audit('fleet', connected ? 'Drill link resumed' : 'Drill link disconnected',
+          `${runtime.device.storeName} · ${runtime.device.name} · ${connected ? 'connection resumed' : 'WebSocket closed'}.`);
+      }
+      notify('fleet');
+    });
+    runtime.connectionQueue = run.catch(() => {});
+    return run;
   }
 
   async function deploy(selection, kind) {
@@ -316,7 +350,7 @@ export async function startLiveLayer({ root, data, store, notify }) {
     throw error;
   }
   return {
-    list, deploy, close,
+    list, deploy, close, setConnected,
     device: id => fleet.get(id)?.device,
     installed: id => fleet.get(id)?.verified,
     menu: version => releases.get(version)?.menu,

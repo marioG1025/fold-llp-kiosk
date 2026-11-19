@@ -1,7 +1,8 @@
 "use strict";
 
 (() => {
-  const { api, escape, icon, money, showNotice } = Fold;
+  const { escape, icon, money, showNotice } = Fold;
+  const api = (path, body) => Fold.api(path, body, { signal: AbortSignal.timeout(path === "/api/orders" ? 12000 : 5000) });
   const workflow = FoldRegisterWorkflow;
   const node = (name) => document.getElementById("reg-" + name);
   const dialog = node("dialog");
@@ -12,7 +13,7 @@
   const normalize = (value) => value.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const label = (device) => device?.name.replace(/^Kiosk\b/i, "Register") || "Register";
   const activeDevice = () => devices.find((device) => device.id === deviceId);
-  let devices = [];
+  let devices = read("fleet") || [];
   let deviceId = new URLSearchParams(location.search).get("device") || read("last") || "market-01";
   let session = null;
   let menu = null;
@@ -27,6 +28,8 @@
   let attempt = null;
   let paying = false;
   let loading = false;
+  let link = navigator.onLine ? "connecting" : "offline";
+  let resuming = false;
   let category = "all";
   let maximum = pageSize;
   let results = [];
@@ -43,7 +46,7 @@
   let recent = [];
   let recentId = 0;
   let tenderMethod = "card-demo";
-  const projector = workflow.customerDisplay(counterSnapshot);
+  const projector = workflow.customerDisplay(counterSnapshot, () => link === "connected" && session?.id);
   const hotKeys = () => workflow.keys(deviceId);
 
   function read(key) {
@@ -60,7 +63,7 @@
   }
 
   function save() {
-    if (session) write(deviceId, { sessionId: session.id, sale, service, attempt, receipt, ...adjustments });
+    return Boolean(session && write(deviceId, { sessionId: session.id, terminal: deviceId, cachedMenu: menu, sale, service, attempt, receipt, ...adjustments }));
   }
 
   function announce(text) { node("announcement").textContent = text; }
@@ -73,38 +76,80 @@
       ? `This sale stays on Menu v${menu.version}. The next sale will use Menu v${installed}.` : "");
   }
 
-  async function fleet() {
-    const id = ++fleetId;
+  function paintDevices() {
+    const select = node("device");
+    const options = devices.map((device) =>
+      `<option value="${escape(device.id)}">${escape(device.storeName)} · ${escape(label(device))}</option>`).join("");
+    if (options && select.dataset.options !== options) {
+      select.innerHTML = options;
+      select.dataset.options = options;
+    }
+    if (activeDevice()) select.value = deviceId;
+    select.disabled = loading || link !== "connected" || !devices.length;
+    node("counter").href = "/counter?device=" + encodeURIComponent(deviceId);
+  }
+
+  function paintLink() {
     const connection = node("connection");
+    const states = {
+      connecting: "Connecting", connected: "Connected", offline: "Offline",
+      reconnecting: "Reconnecting", "missing-session": "Session unavailable"
+    };
+    const notices = {
+      offline: "Offline. Tender is paused until this register reconnects.",
+      reconnecting: "Reconnecting. The register will verify this ticket before taking payment.",
+      "missing-session": "The original session is unavailable. Tender is paused for this saved ticket."
+    };
+    connection.textContent = states[link];
+    connection.classList.toggle("online", link === "connected");
+    connection.classList.toggle("offline", link === "offline" || link === "missing-session");
+    showNotice(node("link-note"), notices[link] || "");
+    paintDevices();
+    node("void").disabled = !canStartFresh() || !sale.length;
+    paintFreshAction();
+  }
+
+  function setLink(state) {
+    link = state;
+    paintLink();
+  }
+
+  function connectivityError(error) {
+    return !navigator.onLine || !error.status || error.status >= 500;
+  }
+
+  function disconnected(state = navigator.onLine ? "reconnecting" : "offline") {
+    setLink(state);
+    node("park").disabled = true;
+    if (stage === "tender" && dialog.open && !attempt) dialog.close();
+    scheduleQuote();
+    if (stage === "pending" && dialog.open) showPending();
+  }
+
+  async function fleet({ restore = true } = {}) {
+    if (!navigator.onLine) {
+      paintDevices();
+      return;
+    }
+    const id = ++fleetId;
     try {
       const response = await api("/api/devices");
-      if (id !== fleetId) return;
+      if (id !== fleetId || !navigator.onLine) return;
       devices = response.devices;
+      write("fleet", devices);
       if (!activeDevice() && devices.length && !session && !loading) deviceId = devices[0].id;
-      const select = node("device");
-      const options = devices.map((device) =>
-        `<option value="${escape(device.id)}">${escape(device.storeName)} · ${escape(label(device))}</option>`).join("");
-      if (select.dataset.options !== options) {
-        select.innerHTML = options;
-        select.dataset.options = options;
-      }
-      select.value = deviceId;
-      select.disabled = loading || !devices.length;
-      node("counter").href = "/counter?device=" + encodeURIComponent(deviceId);
-      connection.textContent = "Connected";
-      connection.classList.add("online");
-      connection.classList.remove("offline");
+      paintDevices();
       versionStatus();
       const installed = activeDevice()?.installedVersion;
-      if (session && installed && Number(installed) !== Number(menu.version) &&
+      if (restore && link !== "connected") {
+        await resume();
+      } else if (session && menu && installed && Number(installed) !== Number(menu.version) &&
           !sale.length && !receipt && !attempt && !dialog.open && !loading) {
         await load({ fresh: true, keepFilters: true });
       }
     } catch {
       if (id !== fleetId) return;
-      connection.textContent = "Offline";
-      connection.classList.add("offline");
-      connection.classList.remove("online");
+      disconnected();
     }
   }
 
@@ -114,12 +159,80 @@
     return order;
   }
 
+  function hasSavedSale(draft) {
+    return Boolean(draft?.attempt || draft?.receipt || draft?.sale?.length);
+  }
+
+  function useDraft(draft, savedOrder = null) {
+    if (!draft) return;
+    service = draft.service === "to-go" ? "to-go" : "here";
+    adjustments = workflow.adjustments(draft);
+    receipt = savedOrder || draft.receipt || null;
+    if (!receipt) {
+      sale = (draft.sale || []).filter((line) => item(line.itemId));
+      attempt = draft.attempt || null;
+    }
+  }
+
+  function showRegister() {
+    if (!menu.categories.some((entry) => entry.id === category)) category = "all";
+    write("last", deviceId);
+    save();
+    node("search").disabled = false;
+    node("edit-keys").disabled = false;
+    renderMenuControls();
+    renderProducts();
+    renderTicket();
+    scheduleQuote();
+    versionStatus();
+    if (link === "connected") refreshAvailability();
+    if (receipt) showReceipt();
+    else if (attempt) showPending();
+  }
+
+  async function resume() {
+    if (resuming || loading || paying || !navigator.onLine || link === "connected") return;
+    if (!session) {
+      if (!dialog.open) await load({ keepFilters: true });
+      return;
+    }
+    const requested = session.id;
+    const target = deviceId;
+    resuming = true;
+    setLink("reconnecting");
+    try {
+      const data = await api("/api/sessions/" + encodeURIComponent(requested));
+      if (data.session.deviceId !== target || data.menu.version !== menu.version) {
+        setLink("missing-session");
+        return;
+      }
+      const order = !receipt ? await recover(data.session) : null;
+      if (!navigator.onLine || deviceId !== target || session?.id !== requested) return;
+      session = data.session;
+      menu = data.menu;
+      setLink("connected");
+      if (order) finish(order);
+      else {
+        renderTicket();
+        scheduleQuote(true);
+        if (attempt && stage === "pending") showPending();
+      }
+      projector.publish(true);
+      refreshAvailability();
+      announce("Register reconnected.");
+    } catch (error) {
+      if (session?.id === requested) disconnected(error.status === 404 ? "missing-session" : undefined);
+    } finally {
+      resuming = false;
+    }
+  }
+
   async function load({ fresh = false, keepFilters = false } = {}) {
     const id = ++loadId;
     const target = deviceId;
-    const saved = fresh ? null : read(target);
-    const draft = saved && !workflow.parked(target).some((ticket) => ticket.sessionId === saved.sessionId) ? saved : null;
-    if (fresh) write(target, null);
+    const saved = read(target);
+    const fallback = saved && !workflow.parked(target).some((ticket) => ticket.sessionId === saved.sessionId) ? saved : null;
+    const draft = fresh ? null : fallback;
     loading = true;
     session = menu = receipt = quote = attempt = null;
     sale = [];
@@ -129,6 +242,7 @@
     availability = new Map();
     availabilityId += 1;
     cannotQuote = false;
+    setLink(navigator.onLine ? (link === "offline" || link === "reconnecting" ? "reconnecting" : "connecting") : "offline");
     projector.start(deviceId);
     node("counter").href = "/counter?device=" + encodeURIComponent(deviceId);
     node("edit-keys").disabled = true;
@@ -148,56 +262,53 @@
     scheduleQuote();
     versionStatus();
     try {
+      if (!navigator.onLine) throw new Error("The register is offline.");
       let data;
       let restored = false;
       if (draft?.sessionId) {
         try {
           data = await api("/api/sessions/" + encodeURIComponent(draft.sessionId));
           restored = data.session.deviceId === target;
-        } catch (error) {
-          if (error.status !== 404) throw error;
-          if (draft.receipt && id === loadId) {
-            receipt = draft.receipt;
-            node("products").innerHTML = "";
-            showReceipt();
-            return;
+          if (!restored && hasSavedSale(draft)) {
+            const mismatch = new Error("This ticket belongs to a different register.");
+            mismatch.status = 404;
+            throw mismatch;
           }
+        } catch (error) {
+          if (error.status !== 404 || hasSavedSale(draft)) throw error;
         }
       }
       if (!restored) data = await api("/api/sessions", { deviceId: target });
       const savedOrder = restored ? draft.receipt || await recover(data.session) : null;
       if (id !== loadId) return;
+      if (!navigator.onLine) throw new Error("The register is offline.");
       session = data.session;
       menu = data.menu;
-      if (restored) {
-        service = draft.service === "to-go" ? "to-go" : "here";
-        adjustments = workflow.adjustments(draft);
-        receipt = savedOrder;
-        if (!receipt) {
-          sale = (draft.sale || []).filter((line) => item(line.itemId));
-          attempt = draft.attempt || null;
+      if (restored) useDraft(draft, savedOrder);
+      setLink("connected");
+      showRegister();
+      return true;
+    } catch (error) {
+      if (id !== loadId) return false;
+      setLink(error.status === 404 && hasSavedSale(draft) ? "missing-session" : navigator.onLine ? "reconnecting" : "offline");
+      if (fallback?.terminal === target && fallback.sessionId && Array.isArray(fallback.cachedMenu?.items) && Array.isArray(fallback.cachedMenu.categories)) {
+        menu = fallback.cachedMenu;
+        session = { id: fallback.sessionId, deviceId: target, version: menu.version };
+        useDraft(fallback);
+        showRegister();
+        if (fresh && hasSavedSale(fallback)) announce("The register could not start a fresh sale. The previous sale was kept.");
+      } else {
+        node("products").innerHTML = `<div class="empty-state"><strong>Register menu unavailable</strong><p>${escape(error.message)}</p><button class="button" type="button" data-retry-register>Try again</button></div>`;
+        if (fallback?.receipt) {
+          receipt = fallback.receipt;
+          showReceipt();
         }
       }
-      if (!menu.categories.some((entry) => entry.id === category)) category = "all";
-      write("last", target);
-      save();
-      node("search").disabled = false;
-      node("edit-keys").disabled = false;
-      renderMenuControls();
-      renderProducts();
-      renderTicket();
-      scheduleQuote();
-      versionStatus();
-      refreshAvailability();
-      if (receipt) showReceipt();
-      else if (attempt) showPending();
-    } catch (error) {
-      if (id !== loadId) return;
-      node("products").innerHTML = `<div class="empty-state"><strong>Register menu unavailable</strong><p>${escape(error.message)}</p><button class="button" type="button" data-retry-register>Try again</button></div>`;
+      return false;
     } finally {
       if (id === loadId) {
         loading = false;
-        node("device").disabled = !devices.length;
+        paintDevices();
         node("products").setAttribute("aria-busy", "false");
       }
     }
@@ -284,8 +395,8 @@
         </div>
       </div>`;
     }).join("") : `<div class="reg-empty-ticket">${icon("bag")}<strong>Ticket is empty</strong><p>Use a product key to add an item.</p></div>`;
-    node("void").disabled = !sale.length || Boolean(attempt);
-    node("park").disabled = !session || !sale.length || Boolean(attempt || receipt);
+    node("void").disabled = !canStartFresh() || !sale.length;
+    node("park").disabled = link !== "connected" || !session || !sale.length || Boolean(attempt || receipt);
     node("adjust").disabled = !session || !sale.length || Boolean(attempt || receipt);
     node("adjust").textContent = adjustments.note || adjustments.discount !== "none" || adjustments.tipCents ? "Edit sale adjustments" : "Adjust sale";
     updateHeldCount();
@@ -345,26 +456,15 @@
   }
 
   function counterSnapshot() {
-    const source = receipt || quote;
-    const items = receipt ? receipt.items.map((line) => ({
-      name: line.name, quantity: line.quantity, lineTotalCents: line.lineTotalCents,
-      modifiers: (line.modifiers || []).map((option) => option.name)
-    })) : sale.map((line) => {
-      const product = item(line.itemId);
-      return { name: product.name, quantity: line.quantity, lineTotalCents: price(product, line.modifiers) * line.quantity,
-        modifiers: selected(product, line.modifiers).map((option) => option.name) };
-    });
+    if (receipt) return { state: "complete" };
+    if (!sale.length) return { state: "idle" };
     return {
-      state: receipt ? "complete" : !sale.length ? "idle" : (stage === "tender" || attempt) ? "payment" : "ticket",
-      version: receipt?.version || menu?.version || null,
-      fulfillment: receipt?.fulfillment || service,
-      items,
-      subtotalCents: source?.subtotalCents ?? items.reduce((sum, line) => sum + line.lineTotalCents, 0),
-      discountCents: source?.discountCents ?? 0, taxCents: source?.taxCents ?? 0,
-      tipCents: source?.tipCents ?? adjustments.tipCents,
-      totalCents: source?.totalCents ?? (items.length ? null : 0),
-      orderNumber: receipt?.number || null,
-      pickup: receipt?.pickup || null,
+      state: stage === "tender" || attempt ? "payment" : "ticket",
+      fulfillment: service,
+      items: sale.map(({ itemId, quantity, modifiers }) => ({ itemId, quantity, modifiers: { ...modifiers } })),
+      discount: adjustments.discount,
+      tipCents: adjustments.tipCents,
+      quoted: Boolean(quote),
     };
   }
 
@@ -378,11 +478,15 @@
     node("tip-row").hidden = !adjustments.tipCents;
     node("tip").textContent = total ? money(total.tipCents || 0) : "—";
     node("total").textContent = total ? money(total.totalCents) : "—";
-    node("tender").disabled = !(sale.length && quote && session) || Boolean(attempt || receipt);
+    node("tender").disabled = !canTender();
     projector.publish();
   }
 
   function payload() { return { sessionId: session.id, fulfillment: service, items: sale, ...adjustments }; }
+
+  function canTender() {
+    return Boolean(navigator.onLine && link === "connected" && sale.length && quote && session && !attempt && !receipt);
+  }
 
   function scheduleQuote(now = false) {
     const id = ++quoteId;
@@ -390,16 +494,20 @@
     quote = null;
     cannotQuote = false;
     showNotice(node("quote-error"), "");
-    const needsQuote = Boolean(session && sale.length && !receipt && !attempt);
+    const needsQuote = Boolean(link === "connected" && navigator.onLine && session && sale.length && !receipt && !attempt);
     paintTotal(needsQuote);
     if (!needsQuote) return;
     function update() {
       api("/api/quote", payload()).then((data) => {
-        if (id !== quoteId) return;
+        if (id !== quoteId || !navigator.onLine || link !== "connected") return;
         quote = data.quote;
         paintTotal();
       }).catch((error) => {
         if (id !== quoteId) return;
+        if (connectivityError(error) || error.status === 404) {
+          disconnected(error.status === 404 ? "missing-session" : undefined);
+          return;
+        }
         cannotQuote = true;
         paintTotal();
         const note = node("quote-error");
@@ -464,6 +572,7 @@
     dialog.innerHTML = `${close}<div class="dialog-body${kind.includes("receipt") ? " reg-receipt" : ""}"><h2 id="reg-dialog-title">${escape(title)}</h2>${content}</div>`;
     if (!dialog.open) dialog.showModal();
     if (focus) dialog.querySelector(focus)?.focus();
+    paintFreshAction();
     projector.publish();
   }
 
@@ -490,7 +599,7 @@
   }
 
   function openTender(trigger) {
-    if (!quote || dialog.open || node("tender").disabled) return;
+    if (!canTender() || dialog.open || node("tender").disabled) return;
     payment = { method: tenderMethod, received: "" };
     openDialog("tender", "Take payment", `
       <div class="reg-tender-total"><span>Amount due</span><strong>${money(quote.totalCents)}</strong></div>
@@ -498,7 +607,7 @@
         <button class="button" type="button" data-method="card-demo" aria-pressed="true">Card (demo)</button>
         <button class="button" type="button" data-method="cash" aria-pressed="false">Cash</button>
       </div>${quote.discountCents || quote.tipCents ? totalsMarkup(quote) : ""}
-      <form id="reg-payment-form"><div id="reg-payment-fields"></div>
+      <form id="reg-payment-form"><div id="reg-payment-fields"></div><p id="reg-payment-save-error" class="notice error" role="alert" hidden></p>
         <div class="dialog-actions"><button class="button" type="button" data-close>Back</button>
           <button class="button primary" type="submit" id="reg-confirm-payment"></button></div>
       </form>`, trigger, true, '[data-method="' + payment.method + '"]');
@@ -547,13 +656,14 @@
   }
 
   function showPending() {
+    const available = link === "connected" && navigator.onLine;
     openDialog("pending", "Check previous payment",
-      '<p class="dialog-description">The register could not confirm the sale. Check again using the original payment details.</p><div class="dialog-actions"><button class="button primary" type="button" data-retry-payment>Check or retry payment</button></div>',
-      null, false, "[data-retry-payment]");
+      `<p class="dialog-description">${available ? "The register could not confirm the sale. Check again using the original payment details." : "The original payment details are saved. Reconnect to confirm or retry this payment."}</p><div class="dialog-actions"><button class="button primary" type="button" data-retry-payment ${available ? "" : "disabled"}>Check or retry payment</button></div>`,
+      null, false, available ? "[data-retry-payment]" : undefined);
   }
 
   async function sendPayment(button) {
-    if (paying || !attempt) return;
+    if (paying || !attempt || link !== "connected" || !navigator.onLine) return;
     paying = true;
     dialog.querySelectorAll("button, input").forEach((control) => { control.disabled = true; });
     button.textContent = "Saving sale…";
@@ -562,7 +672,10 @@
       finish(order);
     } catch (error) {
       if (error.code !== "inventory_unavailable" && (!error.status || error.status >= 500 || [408, 409, 429].includes(error.status))) {
-        const pin = await api("/api/sessions/" + encodeURIComponent(session.id)).then((data) => data.session).catch(() => null);
+        if (connectivityError(error)) disconnected();
+        const pin = navigator.onLine
+          ? await api("/api/sessions/" + encodeURIComponent(session.id)).then((data) => data.session).catch(() => null)
+          : null;
         const order = await recover(pin).catch(() => null);
         if (order) finish(order);
         else showPending();
@@ -615,22 +728,42 @@
       ).join("")}</ul>
       ${totalsMarkup(order)}${paid}${pickup}
       <div class="dialog-actions"><button class="button" type="button" data-print>Print receipt</button>
-      ${historical ? '<button class="button primary" type="button" data-recent-back>Back to recent sales</button>' : '<button class="button primary" type="button" data-next>Next sale</button>'}</div>`,
+      ${historical ? '<button class="button primary" type="button" data-recent-back>Back to recent sales</button>' : '<button class="button primary" type="button" data-next>Next sale</button>'}</div>
+      ${historical ? "" : '<p class="notice" id="reg-fresh-note" role="status" hidden></p>'}`,
     null, historical, historical ? "[data-recent-back]" : "[data-next]");
   }
 
-  async function nextSale() {
+  function canStartFresh() {
+    return navigator.onLine && link === "connected" && !attempt;
+  }
+
+  function paintFreshAction() {
+    const button = dialog.querySelector("[data-next]");
+    if (!button) return;
+    button.disabled = !canStartFresh();
+    const notice = node("fresh-note");
+    if (notice) showNotice(notice, button.disabled ? "Reconnect before starting a fresh sale. The current sale is saved." : "");
+  }
+
+  async function nextSale({ archived = false } = {}) {
+    if (!archived && !canStartFresh()) {
+      paintFreshAction();
+      return false;
+    }
     focusOrigin = null;
     dialog.close();
-    await load({ fresh: true });
-    node("search").focus({ preventScroll: true });
+    const started = await load({ fresh: true });
+    if (!dialog.open) node("search").focus({ preventScroll: true });
+    return started;
   }
 
   function confirmVoid() {
+    if (!canStartFresh() || !sale.length) return;
     openDialog("void", "Void the ticket?", `
       <p class="dialog-description">The current sale will be cleared.</p>
       <div class="dialog-actions"><button class="button" type="button" data-close>Keep ticket</button>
-      <button class="button primary" type="button" data-next>Void ticket</button></div>`,
+      <button class="button primary" type="button" data-next>Void ticket</button></div>
+      <p class="notice" id="reg-fresh-note" role="status" hidden></p>`,
     node("void"), true, ".dialog-actions [data-close]");
   }
 
@@ -641,7 +774,7 @@
   }
 
   function parkDialog() {
-    if (node("park").disabled || dialog.open) return;
+    if (link !== "connected" || node("park").disabled || dialog.open) return;
     const defaultLabel = item(sale[0].itemId).name;
     openDialog("park", "Park this ticket", `<form id="reg-park-form">
       <label class="field">Ticket label<input id="reg-park-label" type="text" maxlength="48" placeholder="${escape(defaultLabel)}" autocomplete="off"></label>
@@ -653,7 +786,7 @@
 
   async function park(form) {
     const submit = form.querySelector("[type=submit]");
-    if (submit.disabled || !session || !sale.length || attempt || recallBusy) return;
+    if (link !== "connected" || submit.disabled || !session || !sale.length || attempt || recallBusy) return;
     const terminal = deviceId;
     submit.disabled = true;
     recallBusy = true;
@@ -662,13 +795,13 @@
         const tickets = workflow.parked(terminal);
         if (tickets.length >= 25) throw new Error("This register has 25 parked tickets. Recall or discard one first.");
         const snapshot = {
-          sessionId: session.id, version: menu.version, sale, service, ...adjustments,
+          sessionId: session.id, terminal, version: menu.version, cachedMenu: menu, sale, service, ...adjustments,
           label: node("park-label").value.trim() || item(sale[0].itemId).name, time: Date.now()
         };
         workflow.replaceParked(terminal, [snapshot, ...tickets.filter((entry) => entry.sessionId !== session.id)]);
       });
-      await nextSale();
-      announce("Ticket parked. A new sale is ready.");
+      const started = await nextSale({ archived: true });
+      announce(started ? "Ticket parked. A new sale is ready." : "Ticket parked. Reconnect to start a fresh sale.");
     } catch (error) {
       showNotice(node("park-error"), error.message || "Ticket could not be parked. It is still open.", "error");
       submit.disabled = false;
@@ -960,7 +1093,7 @@
       if (error) showNotice(node("editor-error"), error, "error");
       else dialog.close();
     }
-    if (event.target !== node("payment-form") || paying || attempt) return;
+    if (event.target !== node("payment-form") || paying || !canTender()) return;
     const tender = { method: payment.method };
     if (payment.method === "cash") {
       const receivedCents = cents(payment.received);
@@ -969,7 +1102,11 @@
     }
     const key = globalThis.crypto?.randomUUID?.() || "fold-register-" + Date.now() + "-" + Math.random().toString(36).slice(2);
     attempt = { ...payload(), idempotencyKey: key, tender };
-    save();
+    if (!save()) {
+      attempt = null;
+      showNotice(node("payment-save-error"), "The browser could not save the payment retry key. Payment is paused.", "error");
+      return;
+    }
     sendPayment(node("confirm-payment"));
   });
 
@@ -1107,6 +1244,17 @@
   }
 
   async function initialize() {
+    if ("serviceWorker" in navigator && new URLSearchParams(location.search).get("lab") !== "1") {
+      navigator.serviceWorker.register("/register-sw.js", { updateViaCache: "none" }).catch(() => {});
+    }
+    addEventListener("offline", () => {
+      fleetId += 1;
+      disconnected("offline");
+    });
+    addEventListener("online", () => {
+      disconnected("reconnecting");
+      void fleet();
+    });
     if ("IntersectionObserver" in window) {
       const observer = new IntersectionObserver(([entry]) => {
         ticketOnScreen = entry.isIntersecting;
@@ -1114,7 +1262,7 @@
       }, { threshold: 0.15 });
       observer.observe(node("ticket"));
     }
-    await fleet();
+    await fleet({ restore: false });
     await load();
     addEventListener("storage", (event) => {
       if (event.key === "fold-register:parked:" + deviceId) updateHeldCount();
@@ -1122,7 +1270,7 @@
     });
     if ("EventSource" in window) {
       const events = new EventSource("/api/events");
-      events.addEventListener("open", fleet);
+      events.addEventListener("open", () => fleet());
       events.addEventListener("message", (event) => {
         try {
           const { type } = JSON.parse(event.data);
@@ -1133,8 +1281,11 @@
       });
     }
     setInterval(fleet, 12000);
+    setInterval(() => {
+      if (link !== "connected" && navigator.onLine) void resume();
+    }, 3500);
     setInterval(refreshAvailability, 12000);
-    setInterval(() => projector.publish(true), 8000);
+    setInterval(() => projector.publish(true), 5000);
   }
 
   initialize();

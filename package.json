@@ -9,6 +9,7 @@
     "setup": "node scripts/setup.mjs",
     "start": "node scripts/run.mjs",
     "test": "node scripts/run.mjs test/integration.mjs",
+    "drill": "node scripts/run.mjs test/cafe-drill.mjs",
     "release:build": "node scripts/release-notes.mjs",
     "release:check": "node scripts/release-notes.mjs --check",
     "stress": "node scripts/run.mjs scripts/stress.mjs"

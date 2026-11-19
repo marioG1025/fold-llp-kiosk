@@ -39,31 +39,64 @@ const FoldRegisterWorkflow = (() => {
     ? navigator.locks.request(parkKey(deviceId), action)
     : action();
 
-  function customerDisplay(readSnapshot) {
-    let channel = null;
+  function customerDisplay(readSnapshot, readSession) {
     let terminal = "";
+    let session = "";
     let previous = "";
+    const waiting = new Map();
+    const sending = new Set();
     const laboratory = new URLSearchParams(location.search).get("lab") === "1";
+
+    async function flush(id) {
+      if (sending.has(id) || !navigator.onLine) return;
+      sending.add(id);
+      try {
+        while (navigator.onLine && waiting.has(id)) {
+          const queue = waiting.get(id);
+          const snapshot = queue.shift();
+          if (!queue.length) waiting.delete(id);
+          try { await Fold.api("/api/counter", snapshot, { signal: AbortSignal.timeout(4200) }); }
+          catch { /* The next heartbeat carries the current state. */ }
+        }
+      } finally {
+        sending.delete(id);
+      }
+    }
+
+    function relay(id, pin, snapshot) {
+      if (!id || !pin || !navigator.onLine) return;
+      const packet = { ...snapshot, deviceId: id, sessionId: pin };
+      const queue = waiting.get(id) || [];
+      const prior = queue.at(-1);
+      const isClaim = prior?.state === "idle" && prior.sessionId !== pin;
+      const needsClaim = snapshot.state === "complete" && prior?.sessionId === pin &&
+        (prior.state === "ticket" || prior.state === "payment");
+      if (snapshot.state === "idle") waiting.set(id, [packet]);
+      else if (!prior || isClaim || needsClaim) {
+        queue.push(packet);
+        waiting.set(id, queue);
+      } else {
+        queue[queue.length - 1] = packet;
+      }
+      void flush(id);
+    }
+
     function publish(force = false) {
-      if (!channel) return;
+      if (laboratory || !terminal) return;
       const snapshot = { type: "snapshot", ...readSnapshot() };
-      const serialized = JSON.stringify(snapshot);
+      const verified = readSession();
+      if (verified) session = verified;
+      const serialized = JSON.stringify([verified, snapshot]);
       if (!force && previous === serialized) return;
       previous = serialized;
-      channel.postMessage(snapshot);
+      relay(terminal, verified || (snapshot.state === "idle" ? session : ""), snapshot);
     }
     function start(deviceId) {
-      if (laboratory || typeof BroadcastChannel !== "function" || terminal === deviceId) return;
-      if (channel) {
-        channel.postMessage({ type: "snapshot", state: "idle", version: null, fulfillment: "here", items: [],
-          subtotalCents: 0, discountCents: 0, taxCents: 0, tipCents: 0, totalCents: 0, orderNumber: null, pickup: null });
-        channel.close();
-      }
+      if (laboratory || terminal === deviceId) return;
+      const cleared = { type: "snapshot", state: "idle" };
+      relay(terminal, session, cleared);
       terminal = deviceId;
-      channel = new BroadcastChannel("fold-counter-" + terminal);
-      channel.addEventListener("message", ({ data }) => {
-        if (data?.type === "request") publish(true);
-      });
+      session = previous = "";
       publish(true);
     }
     return { start, publish };

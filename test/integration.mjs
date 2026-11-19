@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { createCounter } from '../counter.mjs';
 
 const serverFile = fileURLToPath(new URL('../server.mjs', import.meta.url));
 const cart = (sessionId, options = {}) => ({
@@ -19,17 +20,17 @@ const bucket = (id, channel) => parseInt(createHash('sha256').update(`fold.kiosk
 
 test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout: 60_000 }, async t => {
   const data = mkdtempSync(join(tmpdir(), 'fold-integration-'));
-  const env = { ...process.env, FOLD_PORT: '0', FOLD_DATA: data };
+  const env = { ...process.env, FOLD_PORT: '0', FOLD_DATA: data, FOLD_DRILL: '0' };
   let child;
   let origin;
-  function spawnServer() {
-    const candidate = spawn(process.execPath, [serverFile], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  function spawnServer(overrides) {
+    const candidate = spawn(process.execPath, [serverFile], { env: { ...env, ...overrides }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     candidate.log = '';
     for (const stream of [candidate.stdout, candidate.stderr]) stream.on('data', chunk => { candidate.log += chunk; });
     return candidate;
   }
-  async function start() {
-    child = spawnServer();
+  async function start(overrides) {
+    child = spawnServer(overrides);
     for (let i = 0; i < 300 && child.exitCode === null; i++) {
       const ready = child.log.match(/Fold kiosk ready at (http:\/\/127\.0\.0\.1:\d+)/);
       if (ready) {
@@ -96,6 +97,7 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     await request('rollout', { version: 2, channel: 'beta' }, 403, { Origin: 'https://example.com' });
     await request('rollout', { version: 2, channel: 'stable', deviceId: 'market-02' }, 422);
     await request('rollout', { version: 2, channel: 'all', percentage: 101 }, 422);
+    await request('drill/device', { deviceId: 'market-01', connected: false }, 404);
     oldSession = await open('market-02');
     assert.equal(oldSession.menu.version, 1);
     assert.ok(oldSession.menu.items.length >= 50);
@@ -476,4 +478,139 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     assert.equal(returned.totals.orderCount, 0);
     assert.equal(returned.totals.refundCount, 1);
   });
+
+  await t.test('counter relay verifies session and projects buyer-only signed and paid details', async () => {
+    const deviceId = 'market-01';
+    const { session } = await open(deviceId);
+    const publish = (snapshot, expected = 200) => request('counter', { deviceId, sessionId: session.id, ...snapshot }, expected);
+    const read = id => request('counter?device=' + (id ?? deviceId));
+    assert.deepEqual(await read(), { snapshot: null });
+    const ticket = {
+      type: 'snapshot', state: 'ticket', version: 99, fulfillment: 'to-go',
+      items: [{ itemId: 'flat-white', name: 'Hidden fake name', quantity: 1, lineTotalCents: 1, modifiers: { milk: 'whole' }, note: 'Private line note' }],
+      subtotalCents: 1, discount: 'staff-10', discountCents: 1, taxCents: 1, tipCents: 100, totalCents: 1, quoted: true,
+      note: 'Staff private adjustment', tender: { method: 'cash', receivedCents: 1000 }, orderId: 'Internal UUID',
+      pickup: { title: 'Private pickup override', description: 'Private description' }, orderNumber: 'F-fake',
+    };
+    await publish({ ...ticket, deviceId: 'market-02' }, 403);
+    await publish({ ...ticket, sessionId: randomUUID() }, 404);
+    await publish({ ...ticket, tipCents: -50 }, 422);
+    await publish({ ...ticket, quoted: 'true' }, 422);
+    await publish({ ...ticket, items: [{ itemId: 'Private payload', quantity: 1 }] }, 422);
+    await publish({ ...ticket, items: [{ itemId: 'flat-white', quantity: 1, modifiers: { milk: 'Private payload' } }] }, 422);
+    await publish({ ...ticket, state: 'complete' }, 409);
+    const view = await publish(ticket);
+    assert.deepEqual(view, {
+      snapshot: {
+        type: 'snapshot', state: 'ticket', version: 1, fulfillment: 'to-go',
+        items: [{ name: 'Flat White', quantity: 1, lineTotalCents: 450, modifiers: ['Whole milk'] }],
+        subtotalCents: 450, discountCents: 45, taxCents: 33, tipCents: 100, totalCents: 538, orderNumber: null, pickup: null,
+      },
+    });
+    assert.deepEqual(await read(), view);
+    assert.deepEqual(await read('market-02'), { snapshot: null });
+    const { quote } = await request('quote', { ...ticket, sessionId: session.id });
+    assert.deepEqual([
+      view.snapshot.subtotalCents, view.snapshot.discountCents, view.snapshot.taxCents, view.snapshot.tipCents, view.snapshot.totalCents,
+    ], [quote.subtotalCents, quote.discountCents, quote.taxCents, quote.tipCents, quote.totalCents]);
+    await stock('market', 'flat-white', true, 0);
+    await request('quote', { ...ticket, sessionId: session.id }, 409);
+    assert.deepEqual((await publish({ ...ticket, quoted: false })).snapshot, { ...view.snapshot, taxCents: null, totalCents: null });
+    await stock('market', 'flat-white', true, null);
+
+    const approved = id => cart(id, {
+      items: [{ itemId: 'flat-white', quantity: 1, modifiers: { milk: 'whole' } }], fulfillment: 'to-go',
+      discount: 'staff-10', tipCents: 100, note: 'Staff private adjustment',
+      tender: { method: 'cash', receivedCents: 1000 },
+    });
+    const paid = await checkout(approved(session.id));
+    const completed = await publish({ ...ticket, state: 'complete', items: [], totalCents: 0 });
+    assert.deepEqual(completed.snapshot, { ...view.snapshot, state: 'complete', orderNumber: paid.order.number, pickup: paid.order.pickup });
+    assert.equal(JSON.stringify(completed).includes(session.id), false);
+    assert.equal(Object.hasOwn(completed.snapshot, 'tender'), false);
+    assert.equal(Object.hasOwn(completed.snapshot, 'note'), false);
+
+    const parked = (await open(deviceId)).session;
+    const next = (await open(deviceId)).session;
+    const newer = await publish({ ...ticket, sessionId: next.id, state: 'payment' });
+    assert.deepEqual(await publish({ state: 'idle' }), newer, 'An older terminal session must not hide a newer customer ticket');
+    assert.deepEqual(await publish({ sessionId: next.id, state: 'idle' }), { snapshot: null });
+    assert.deepEqual(await publish({ state: 'complete' }), { snapshot: null }, 'A delayed paid receipt must stay cleared');
+    assert.deepEqual(await publish({ ...ticket, sessionId: parked.id }), view, 'An unpaid parked draft may reclaim the display');
+    const recalled = await checkout(approved(parked.id));
+    const settled = await publish({ sessionId: parked.id, state: 'complete' });
+    assert.equal(settled.snapshot.orderNumber, recalled.order.number);
+    await refund(recalled.order, { idempotencyKey: randomUUID(), reason: 'Counter relay refund' });
+    assert.deepEqual(await read(), { snapshot: null }, 'Refund revokes the displayed receipt immediately');
+    assert.deepEqual(await publish({ sessionId: parked.id, state: 'complete' }), { snapshot: null });
+    await publish({ ...ticket, sessionId: next.id, state: 'payment' });
+    await stop();
+    await start({ FOLD_DRILL: '1' });
+    assert.deepEqual(await read(), { snapshot: null }, 'Counter contents must not persist after the service restarts');
+  });
+
+  await t.test('drill drops and resumes the actual LLP transport with one queued release and a pinned sale', async () => {
+    const deviceId = 'market-02';
+    const base = await state(deviceId);
+    assert.equal(base.installedVersion, 1);
+    const pinned = (await open(deviceId)).session;
+    const toggle = connected => request('drill/device', { deviceId, connected });
+    await request('drill/device', { deviceId, connected: 'false' }, 422);
+    const away = await toggle(false);
+    assert.equal(away.devices.find(device => device.id === deviceId).status, 'offline');
+    assert.equal(away.devices.find(device => device.id === deviceId).wireVersion, base.wireVersion);
+    assert.ok(away.devices.filter(device => device.id !== deviceId).every(device => device.status === 'live'));
+    await request('sessions', { deviceId }, 503);
+    const roll = await release({ channel: 'beta' });
+    const pending = roll.devices.find(device => device.id === deviceId);
+    assert.equal(pending.status, 'offline');
+    assert.equal(pending.desiredVersion, 2);
+    assert.equal(pending.installedVersion, 1);
+    assert.equal(pending.targetWireVersion, base.wireVersion + 1);
+    assert.ok(roll.devices.filter(device => device.channel === 'beta' && device.id !== deviceId).every(device => device.installedVersion === 2));
+    await wait(650); // Longer than the normal retry interval.
+    assert.equal((await state(deviceId)).status, 'offline');
+    assert.equal((await request('sessions/' + pinned.id)).menu.version, 1);
+    const resumed = await toggle(true);
+    const installed = resumed.devices.find(device => device.id === deviceId);
+    assert.equal(installed.status, 'live');
+    assert.equal(installed.installedVersion, 2);
+    assert.equal(installed.wireVersion, pending.targetWireVersion);
+    assert.ok(resumed.audit.some(entry => entry.event === 'Drill link disconnected' && entry.detail.includes('Market Street')));
+    assert.ok(resumed.audit.some(entry => entry.event === 'Device acknowledged' && entry.detail.includes(`Market Street · Kiosk 02 verified menu v2 over LLP (wire v${installed.wireVersion}`)));
+    const fresh = (await open(deviceId)).session;
+    assert.equal(fresh.version, 2);
+    assert.equal((await request('quote', cart(fresh.id))).quote.totalCents, 1407);
+    const payload = cart(pinned.id);
+    const { order } = await checkout(payload);
+    assert.equal(order.version, 1);
+    assert.equal(order.totalCents, 1353);
+    assert.equal((await checkout(payload, 200)).order.id, order.id);
+  });
+});
+
+test('counter heartbeats refresh the 18-second lease without publishing duplicate changes', () => {
+  let time = 0;
+  const deviceId = 'market-01';
+  const notifications = [];
+  const quote = {
+    items: [{ name: 'Espresso', quantity: 1, lineTotalCents: 320, modifiers: [] }],
+    subtotalCents: 320, discountCents: 0, taxCents: 26, tipCents: 0, totalCents: 346,
+  };
+  const counter = createCounter({
+    clock: () => time,
+    live: { device: () => true },
+    store: { get: () => ({ sequence: 1 }) },
+    orders: { session: () => ({ session: { deviceId, orderId: null, version: 1 } }), counterQuote: () => quote },
+    notify: event => notifications.push(event),
+  });
+  const snapshot = { deviceId, sessionId: 'fixture', state: 'ticket', quoted: true, fulfillment: 'here',
+    items: [{ itemId: 'espresso', quantity: 1 }] };
+  counter.publish(snapshot);
+  time = 17_999;
+  assert.ok(counter.read(deviceId).snapshot);
+  counter.publish(snapshot);
+  assert.deepEqual(notifications, ['counter']);
+  time = 35_999;
+  assert.deepEqual(counter.read(deviceId), { snapshot: null });
 });

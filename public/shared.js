@@ -27,7 +27,7 @@ const Fold = (() => {
   const icon = (name) => '<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + (icons[name] || "") + '</svg>';
   const money = (cents) => currency.format((Number(cents) || 0) / 100);
 
-  async function api(path, body) {
+  async function api(path, body, { signal } = {}) {
     const options = body === undefined ? { cache: "no-store" } : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,7 +35,7 @@ const Fold = (() => {
     };
     let response;
     try {
-      response = await fetch(path, options);
+      response = await fetch(path, { ...options, signal });
     } catch {
       throw new Error("The kiosk service is unavailable. Check the connection and try again.");
     }

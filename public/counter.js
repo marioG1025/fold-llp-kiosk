@@ -7,9 +7,10 @@ const states = new Set(['idle', 'ticket', 'payment', 'complete']);
 const device = $('#counter-device');
 const ticket = $('#counter-ticket');
 let devices = [];
-let connection;
+let stream;
+let request;
 let activeId;
-let seenAt;
+let lastConfirmed = 0;
 let current;
 let liveSummary = '';
 
@@ -78,24 +79,55 @@ function render() {
   if (nextSummary !== liveSummary) $('#counter-announce').textContent = liveSummary = nextSummary;
 }
 
-function connect(id) {
-  connection?.close();
-  connection = null;
-  activeId = id;
-  current = null;
-  if ('BroadcastChannel' in window) {
-    connection = new BroadcastChannel(`fold-counter-${id}`);
-    connection.onmessage = ({ data }) => {
-      const safe = displaySnapshot(data);
-      if (!safe) return;
-      seenAt = Date.now();
-      const changed = JSON.stringify(current) !== JSON.stringify(safe);
-      current = safe;
-      if (changed) render();
-    };
-    connection.postMessage({ type: 'request' });
-  }
+function update(snapshot) {
+  if (JSON.stringify(current) === JSON.stringify(snapshot)) return;
+  current = snapshot;
   render();
+}
+
+async function refresh() {
+  if (!activeId || request) return;
+  const selected = activeId;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4500);
+  request = controller;
+  try {
+    const response = await fetch('/api/counter?device=' + encodeURIComponent(selected), {
+      cache: 'no-store', signal: controller.signal
+    });
+    if (!response.ok) throw new Error('Could not read the register display');
+    const data = await response.json();
+    if (request !== controller || selected !== activeId) return;
+    lastConfirmed = Date.now();
+    update(data.snapshot ? displaySnapshot(data.snapshot) : null);
+  } catch {
+    if (request === controller && Date.now() - lastConfirmed >= 9000) update(null);
+  } finally {
+    clearTimeout(timer);
+    if (request === controller) request = null;
+  }
+}
+
+function connect(id) {
+  request?.abort();
+  request = null;
+  activeId = id;
+  lastConfirmed = 0;
+  current = null;
+  render();
+  void refresh();
+}
+
+function startStream() {
+  if (!('EventSource' in window) || stream) return;
+  stream = new EventSource('/api/events');
+  stream.addEventListener('open', refresh);
+  stream.addEventListener('message', ({ data }) => {
+    try {
+      const event = JSON.parse(data);
+      if (event.type === 'counter' && (!event.deviceId || event.deviceId === activeId)) void refresh();
+    } catch { /* Other event formats do not affect this display. */ }
+  });
 }
 
 device.addEventListener('change', () => {
@@ -131,16 +163,26 @@ async function init() {
     device.value = initial.id;
     device.disabled = false;
     connect(initial.id);
+    startStream();
   } catch {
     $('#counter-message').textContent = 'Connecting to the store. Please wait.';
     setTimeout(init, 5000);
   }
 }
 
-setInterval(() => {
-  if (current && Date.now() - seenAt > 18000) { current = null; render(); }
-  connection?.postMessage({ type: 'request' });
-}, 4000);
-window.addEventListener('pagehide', () => { connection?.close(); connection = null; });
-window.addEventListener('pageshow', event => { if (event.persisted && activeId) connect(activeId); });
+setInterval(refresh, 3000);
+window.addEventListener('online', refresh);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(); });
+window.addEventListener('pagehide', () => {
+  stream?.close();
+  stream = null;
+  request?.abort();
+  request = null;
+});
+window.addEventListener('pageshow', event => {
+  if (event.persisted && activeId) {
+    connect(activeId);
+    startStream();
+  }
+});
 void init();
