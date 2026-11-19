@@ -214,6 +214,7 @@ h1, h2, h3, p { margin: 0; }
 .tab svg { width: 17px; height: 17px; }
 .tab:hover { color: var(--ink); background: #f1eadb; }
 .tab.is-active { color: var(--ink); background: var(--butter-light); border-color: #ead9a4; }
+.ops-nav .pickup-link { margin-left: auto; white-space: nowrap; }
 .loading { color: var(--muted); padding: 20px 0; }
 .ops-summary, .ops-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 17px; align-items: start; }
 .ops-grid { grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr); }
@@ -313,6 +314,7 @@ h1, h2, h3, p { margin: 0; }
   .edition { font-size: .68rem; }
   .ops-layout { padding-top: 27px; }
   .ops-nav { margin: 18px 0 14px; flex-wrap: wrap; }
+  .ops-nav .pickup-link { margin-left: 0; }
   .tab { padding: 7px; gap: 4px; min-height: 37px; font-size: .75rem; }
   .tab svg { width: 15px; height: 15px; }
   .ops-summary { gap: 5px; }

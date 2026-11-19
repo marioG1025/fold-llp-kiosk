@@ -1,0 +1,79 @@
+.pickup-layout {
+  max-width: 1400px;
+  margin: auto;
+  padding: 30px clamp(18px, 4.15vw, 64px) 60px;
+}
+.pickup-heading {
+  border-radius: 23px;
+  padding: clamp(23px, 4vw, 47px);
+  margin-bottom: 19px;
+  background: var(--espresso);
+  color: #fff9ec;
+}
+.pickup-heading .eyebrow { color: #f5d783; }
+.pickup-heading h1 {
+  font: 400 clamp(3.65rem, 7vw, 6.25rem)/.92 var(--serif);
+  letter-spacing: -.045em;
+  margin: 8px 0 12px;
+}
+.pickup-heading p:last-child { color: #f7e9d5; line-height: 1.45; }
+.pickup-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; align-items: start; }
+.pickup-column {
+  min-height: clamp(225px, 37vh, 370px);
+  padding: clamp(15px, 2.4vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: var(--round);
+  background: var(--white);
+}
+.pickup-ready { background: #fbefc9; border-color: #e6d298; }
+.pickup-column-heading { display: flex; align-items: center; gap: 9px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.pickup-ready .pickup-column-heading { border-color: #e6d298; }
+.pickup-column-heading h2 { font: 400 clamp(2rem, 3.75vw, 3.6rem)/.95 var(--serif); letter-spacing: -.03em; }
+.pickup-icon {
+  display: grid;
+  place-items: center;
+  width: clamp(31px, 4vw, 51px);
+  height: clamp(31px, 4vw, 51px);
+  flex: none;
+  border-radius: 50%;
+  background: var(--sand);
+  color: #735633;
+}
+.pickup-ready .pickup-icon { background: var(--espresso); color: #fff3d3; }
+.pickup-numbers {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.pickup-numbers li {
+  display: grid;
+  place-items: center;
+  padding: 11px 8px;
+  border: 1px solid #e6ddce;
+  border-radius: 11px;
+  background: #f9f5ed;
+  font-size: clamp(1.45rem, 3vw, 2.6rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  letter-spacing: -.055em;
+  overflow-wrap: anywhere;
+}
+.pickup-ready .pickup-numbers li { background: var(--espresso); border-color: var(--espresso); color: #fff3d3; }
+.pickup-empty { color: var(--muted); font-size: .94rem; line-height: 1.4; padding-top: 15px; }
+.pickup-ready .pickup-empty { color: #674d25; }
+@media (max-width: 600px) {
+  .pickup-layout { padding-top: 18px; }
+  .pickup-board { gap: 8px; }
+  .pickup-column { min-height: 185px; border-radius: 13px; }
+  .pickup-column-heading { gap: 6px; }
+  .pickup-column-heading h2 { font-size: clamp(1.41rem, 5.4vw, 2.1rem); }
+  .pickup-icon { width: 26px; height: 26px; }
+  .pickup-icon svg { width: 15px; height: 15px; }
+  .pickup-empty { font-size: .82rem; }
+}
+@media (max-width: 340px) {
+  .pickup-column { padding: 11px; }
+}

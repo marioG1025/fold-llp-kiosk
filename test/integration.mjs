@@ -175,6 +175,7 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     assert.equal(firstOrder.version, 1);
     assert.equal(firstOrder.pickup.title, oldSession.menu.pickup.title);
     assert.equal(firstOrder.totalCents, quote.totalCents);
+    assert.deepEqual(await request('pickup?store=market'), { storeId: 'market', orders: [] });
     await checkout({ ...old, fulfillment: 'to-go' }, 409);
     await checkout({ ...old, idempotencyKey: randomUUID() }, 409);
     const { orders, counts } = await request('orders');
@@ -225,6 +226,18 @@ test('signed kiosk fleet, pinned checkout, kitchen state and restart', { timeout
     assert.equal(audit.filter(entry => entry.event === 'Order received').length, 2);
     assert.equal(audit.filter(entry => entry.event === 'Kitchen status updated').length, 3);
     assert.equal(audit.filter(entry => entry.event === 'Fleet rolled back').length, 1);
+  });
+
+  await t.test('the pickup shelf displays only active v2 order numbers for the selected store', async () => {
+    const visible = (status) => ({ storeId: 'market', orders: [{ number: seasonalOrder.number, status }] });
+    assert.deepEqual(await request('pickup?store=market'), visible('received'));
+    assert.deepEqual(await request('pickup?store=north'), { storeId: 'north', orders: [] });
+    await request('pickup?store=other', undefined, 422);
+    await status(seasonalOrder, 'preparing');
+    await status(seasonalOrder, 'ready');
+    assert.deepEqual(await request('pickup?store=market'), visible('ready'));
+    await status(seasonalOrder, 'completed');
+    assert.deepEqual(await request('pickup?store=market'), { storeId: 'market', orders: [] });
   });
 
   await t.test('a corrupted pending manifest is rejected while the last verified menu stays available', async () => {

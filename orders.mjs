@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { devices } from './catalog.mjs';
 import { now } from './store.mjs';
 
 const taxBasisPoints = 825;
 const states = ['received', 'preparing', 'ready', 'completed'];
+const storeIds = new Set(devices.map(device => device.storeId));
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isUuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 
@@ -146,5 +148,16 @@ export function createOrders({ store, live, notify }) {
     return { orders: [...active, ...recent].map(receipt), counts };
   }
 
-  return { openSession, session, quote: input => price(input).quote, order, update, get, list };
+  function pickup(storeId) {
+    if (!storeIds.has(storeId)) throw new HttpError(422, 'Choose a FOLD store.');
+    const rows = store.all(`
+      SELECT sequence, status FROM orders
+      WHERE status IN ('received', 'preparing', 'ready')
+        AND json_extract(receipt, '$.storeId') = ?
+        AND json_extract(receipt, '$.version') = 2
+      ORDER BY sequence ASC`, storeId);
+    return { storeId, orders: rows.map(row => ({ number: `F-${100 + row.sequence}`, status: row.status })) };
+  }
+
+  return { openSession, session, quote: input => price(input).quote, order, update, get, list, pickup };
 }

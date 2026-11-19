@@ -15,6 +15,7 @@ npm start
 
 - [Order kiosk](http://127.0.0.1:17730/)
 - [Operations console](http://127.0.0.1:17730/ops)
+- [Customer pickup display](http://127.0.0.1:17730/pickup)
 
 `FOLD_PORT` sets the HTTP port, `FOLD_DATA` selects the SQLite and generated Wasm directory, and `LLP_ROOT` selects an existing LLP checkout. The default data directory is `.fold-data/`, which should remain local. Restarting against the same data directory restores the published menu assignments, accepted orders, and server-side session versions.
 
@@ -25,7 +26,7 @@ If the demo already has v2 installed, use **Roll back fleet** in Operations to s
 1. In the kiosk, select **Market Street · Kiosk 02** on the beta channel. Add a Flat White to your cart and leave the order open.
 2. In Operations, publish **Seasonal Menu** to **Beta** at **100%**. Check which kiosks acknowledged the signed release. The three stable kiosks keep their prior menu.
 3. Finish your existing order on the kiosk. Its menu price and **Collect at the bar** instructions remain pinned to v1.
-4. Start a new order on the same beta kiosk. It now has Maple Cloud Latte and Pear Frangipane Tart, a revised Flat White price, and new pickup shelf instructions. Send a demo order and advance it in the Operations queue.
+4. Start a new order on the same beta kiosk. It now has Maple Cloud Latte and Pear Frangipane Tart, a revised Flat White price, and new pickup shelf instructions. Send a demo order and advance it in the Operations queue. The customer pickup display shows the order number moving to **Ready** at the selected store.
 5. Roll back through Operations. The fleet returns to the core menu for new sessions. Existing sessions and order history retain their respective versions.
 
 ## How the experiment works

@@ -84,7 +84,8 @@ const types = {
 };
 const contentPolicy = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 function staticFile(path, method, res) {
-  const file = path === '/' ? '/index.html' : ['/ops', '/ops/'].includes(path) ? '/ops.html' : path;
+  const page = path === '/' ? 'index' : /^\/(ops|pickup)\/?$/.exec(path)?.[1];
+  const file = page ? `/${page}.html` : path;
   const type = types[extname(file)];
   if (!type || !/^\/(?:[a-z0-9_-]+\/)*[a-z0-9_.-]+$/i.test(file)) throw new HttpError(404, 'Page was not found.');
   let buffer;
@@ -151,6 +152,7 @@ const server = createServer(async (req, res) => {
       if (pathname === '/api/health') return json(res, 200, { ok: true, app: 'fold-kiosk' });
       if (pathname === '/api/devices') return json(res, 200, fleetState());
       if (pathname === '/api/orders') return json(res, 200, orders.list());
+      if (pathname === '/api/pickup') return json(res, 200, orders.pickup(searchParams.get('store')));
       const receipt = /^\/api\/orders\/([^/]+)$/.exec(pathname);
       if (receipt) return json(res, 200, { order: orders.get(receipt[1], searchParams.get('sessionId')) });
       if (pathname === '/api/audit') return json(res, 200, { audit: store.history() });

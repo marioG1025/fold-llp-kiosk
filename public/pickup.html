@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f9f7f1">
+  <meta name="description" content="Live pickup numbers at Fold Coffee &amp; Patisserie.">
+  <title>Fold Coffee &amp; Patisserie — Pickup</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/pickup.css">
+  <script defer src="/shared.js"></script>
+  <script defer src="/pickup.js"></script>
+</head>
+<body class="pickup">
+  <a class="skip" href="#main">Skip to pickup numbers</a>
+  <header class="site-header">
+    <div class="topbar">
+      <span class="brand" aria-label="Fold coffee and patisserie">
+        <span class="brand-name">fold<span>.</span></span>
+        <span class="brand-caption">COFFEE &amp;<br>PATISSERIE</span>
+      </span>
+      <div class="header-tools">
+        <div class="store-choice">
+          <span data-icon="pin"></span>
+          <label class="sr-only" for="pickup-store">Pickup location</label>
+          <select id="pickup-store">
+            <option value="market">Market Street</option>
+            <option value="north">North Loop</option>
+            <option value="lake">Lakeside</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="pickup-layout" id="main">
+    <div class="pickup-heading">
+      <p class="eyebrow" id="pickup-location">MARKET STREET</p>
+      <h1>Order pickup</h1>
+      <p>Head to the Fold pickup shelf when your number is ready.</p>
+    </div>
+    <div class="notice" id="pickup-notice" role="status" hidden></div>
+    <div class="pickup-board">
+      <section class="pickup-column" aria-labelledby="preparing-title">
+        <div class="pickup-column-heading">
+          <span class="pickup-icon" data-icon="clock"></span>
+          <h2 id="preparing-title">Preparing</h2>
+        </div>
+        <div id="pickup-preparing" class="pickup-list" aria-busy="true"></div>
+      </section>
+      <section class="pickup-column pickup-ready" aria-labelledby="ready-title">
+        <div class="pickup-column-heading">
+          <span class="pickup-icon" data-icon="check"></span>
+          <h2 id="ready-title">Ready</h2>
+        </div>
+        <div id="pickup-ready" class="pickup-list" aria-busy="true"></div>
+      </section>
+    </div>
+    <div class="sr-only" id="pickup-status" role="status"></div>
+  </main>
+</body>
+</html>
